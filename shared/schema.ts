@@ -36,7 +36,7 @@ export const teamMembers = pgTable("team_members", {
 export const tasks = pgTable("tasks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   teamId: varchar("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
-  responsibleMemberId: varchar("responsible_member_id").references(() => teamMembers.id),
+  responsibleMemberId: varchar("responsible_member_id").references(() => teamMembers.id, { onDelete: "set null" }),
   title: text("title").notNull(),
   notes: text("notes"),
   status: text("status", { enum: ["Open", "In-Progress", "Blocked", "Done", "Canceled"] }).notNull().default("Open"),
