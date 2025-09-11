@@ -3,8 +3,11 @@ import {
   type TeamMember, type InsertTeamMember, type Task, type InsertTask,
   type Minutes, type InsertMinutes, type Snapshot, type InsertSnapshot,
   type TeamWithMembers, type TaskWithDetails, type MinutesWithSnapshots,
-  TaskStatus, ChangeType
+  TaskStatus, ChangeType,
+  users, teams, teamMembers, tasks, minutes, snapshots
 } from "@shared/schema";
+import { db } from "./db";
+import { eq, and, desc, ilike, or, inArray, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
@@ -59,148 +62,79 @@ export interface IStorage {
   searchTeams(query: string): Promise<TeamWithMembers[]>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User> = new Map();
-  private teams: Map<string, Team> = new Map();
-  private teamMembers: Map<string, TeamMember> = new Map();
-  private tasks: Map<string, Task> = new Map();
-  private minutes: Map<string, Minutes> = new Map();
-  private snapshots: Map<string, Snapshot> = new Map();
-
+export class DatabaseStorage implements IStorage {
   constructor() {
-    this.initializeData();
-  }
-
-  private initializeData() {
-    // Initialize superadmin
-    const superadminId = randomUUID();
-    const superadmin: User = {
-      id: superadminId,
-      email: "asif.shakir@gmail.com",
-      displayName: "Asif Shakir",
-      photoUrl: null,
-      isAdmin: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    this.users.set(superadminId, superadmin);
-
-    // Create initial teams
-    const teamNames = ["Creative", "CC", "NCF", "SS", "Research", "Marketing", "Gems", "Tech", "Finance", "Gifts", "HR", "Strategy", "Coordinators"];
-    teamNames.forEach(name => {
-      const team: Team = {
-        id: randomUUID(),
-        name,
-        defaultVenue: `${name} Meeting Room`,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      this.teams.set(team.id, team);
-    });
-
-    // Add Abbas to Strategy team
-    const abbassId = randomUUID();
-    const abbas: User = {
-      id: abbassId,
-      email: "abbas.naheed@gmail.com",
-      displayName: "Abbas Naheed",
-      photoUrl: null,
-      isAdmin: false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    this.users.set(abbassId, abbas);
-
-    const strategyTeam = Array.from(this.teams.values()).find(t => t.name === "Strategy");
-    if (strategyTeam) {
-      // Add superadmin as member
-      const superadminMember: TeamMember = {
-        id: randomUUID(),
-        teamId: strategyTeam.id,
-        userId: superadminId,
-        isCoordinator: false,
-        createdAt: new Date(),
-      };
-      this.teamMembers.set(superadminMember.id, superadminMember);
-
-      // Add Abbas as coordinator
-      const abbasMember: TeamMember = {
-        id: randomUUID(),
-        teamId: strategyTeam.id,
-        userId: abbassId,
-        isCoordinator: true,
-        createdAt: new Date(),
-      };
-      this.teamMembers.set(abbasMember.id, abbasMember);
-    }
+    // Database initialization will happen asynchronously when needed
+    // The schema will be created via db:push command
   }
 
   // User operations
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(user => user.email === email);
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user || undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = {
-      ...insertUser,
-      id,
-      displayName: insertUser.displayName || null,
-      photoUrl: insertUser.photoUrl || null,
-      isAdmin: insertUser.isAdmin || false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    this.users.set(id, user);
+    const [user] = await db
+      .insert(users)
+      .values(insertUser)
+      .returning();
     return user;
   }
 
   async updateUser(id: string, updates: Partial<User>): Promise<User> {
-    const user = this.users.get(id);
+    const [user] = await db
+      .update(users)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
     if (!user) throw new Error("User not found");
-    
-    const updated = { ...user, ...updates, updatedAt: new Date() };
-    this.users.set(id, updated);
-    return updated;
+    return user;
   }
 
   async getAllUsers(): Promise<User[]> {
-    return Array.from(this.users.values());
+    return await db.select().from(users);
   }
 
   // Team operations
   async getTeam(id: string): Promise<Team | undefined> {
-    return this.teams.get(id);
+    const [team] = await db.select().from(teams).where(eq(teams.id, id));
+    return team || undefined;
   }
 
   async getTeamWithMembers(id: string): Promise<TeamWithMembers | undefined> {
-    const team = this.teams.get(id);
+    const team = await this.getTeam(id);
     if (!team) return undefined;
 
-    const teamMembers = Array.from(this.teamMembers.values())
-      .filter(tm => tm.teamId === id)
-      .map(tm => ({ ...tm, user: this.users.get(tm.userId)! }));
+    const membersWithUsers = await db
+      .select()
+      .from(teamMembers)
+      .innerJoin(users, eq(teamMembers.userId, users.id))
+      .where(eq(teamMembers.teamId, id));
+
+    const members = membersWithUsers.map(m => ({ ...m.team_members, user: m.users }));
 
     return {
       ...team,
-      members: teamMembers,
-      coordinators: teamMembers.filter(tm => tm.isCoordinator),
+      members,
+      coordinators: members.filter(tm => tm.isCoordinator),
     };
   }
 
   async getAllTeams(): Promise<Team[]> {
-    return Array.from(this.teams.values());
+    return await db.select().from(teams);
   }
 
   async getAllTeamsWithMembers(): Promise<TeamWithMembers[]> {
-    const teams = await this.getAllTeams();
+    const allTeams = await this.getAllTeams();
     const result: TeamWithMembers[] = [];
     
-    for (const team of teams) {
+    for (const team of allTeams) {
       const withMembers = await this.getTeamWithMembers(team.id);
       if (withMembers) result.push(withMembers);
     }
@@ -209,131 +143,176 @@ export class MemStorage implements IStorage {
   }
 
   async createTeam(insertTeam: InsertTeam): Promise<Team> {
-    const id = randomUUID();
-    const team: Team = {
-      ...insertTeam,
-      id,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    this.teams.set(id, team);
+    const [team] = await db
+      .insert(teams)
+      .values(insertTeam)
+      .returning();
     return team;
   }
 
   async updateTeam(id: string, updates: Partial<Team>): Promise<Team> {
-    const team = this.teams.get(id);
+    const [team] = await db
+      .update(teams)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(teams.id, id))
+      .returning();
     if (!team) throw new Error("Team not found");
-    
-    const updated = { ...team, ...updates, updatedAt: new Date() };
-    this.teams.set(id, updated);
-    return updated;
+    return team;
   }
 
   // Team member operations
   async getTeamMember(id: string): Promise<TeamMember | undefined> {
-    return this.teamMembers.get(id);
+    const [member] = await db.select().from(teamMembers).where(eq(teamMembers.id, id));
+    return member || undefined;
   }
 
   async getTeamMembersByTeam(teamId: string): Promise<(TeamMember & { user: User })[]> {
-    return Array.from(this.teamMembers.values())
-      .filter(tm => tm.teamId === teamId)
-      .map(tm => ({ ...tm, user: this.users.get(tm.userId)! }));
+    const result = await db
+      .select()
+      .from(teamMembers)
+      .innerJoin(users, eq(teamMembers.userId, users.id))
+      .where(eq(teamMembers.teamId, teamId));
+
+    return result.map(r => ({ ...r.team_members, user: r.users }));
   }
 
   async getTeamMembersByUser(userId: string): Promise<(TeamMember & { team: Team })[]> {
-    return Array.from(this.teamMembers.values())
-      .filter(tm => tm.userId === userId)
-      .map(tm => ({ ...tm, team: this.teams.get(tm.teamId)! }));
+    const result = await db
+      .select()
+      .from(teamMembers)
+      .innerJoin(teams, eq(teamMembers.teamId, teams.id))
+      .where(eq(teamMembers.userId, userId));
+
+    return result.map(r => ({ ...r.team_members, team: r.teams }));
   }
 
   async createTeamMember(insertMember: InsertTeamMember): Promise<TeamMember> {
-    const id = randomUUID();
-    const member: TeamMember = {
-      ...insertMember,
-      id,
-      createdAt: new Date(),
-    };
-    this.teamMembers.set(id, member);
+    const [member] = await db
+      .insert(teamMembers)
+      .values(insertMember)
+      .returning();
     return member;
   }
 
   async updateTeamMember(id: string, updates: Partial<TeamMember>): Promise<TeamMember> {
-    const member = this.teamMembers.get(id);
+    const [member] = await db
+      .update(teamMembers)
+      .set(updates)
+      .where(eq(teamMembers.id, id))
+      .returning();
     if (!member) throw new Error("Team member not found");
-    
-    const updated = { ...member, ...updates };
-    this.teamMembers.set(id, updated);
-    return updated;
+    return member;
   }
 
   async deleteTeamMember(id: string): Promise<void> {
-    this.teamMembers.delete(id);
+    await db.delete(teamMembers).where(eq(teamMembers.id, id));
   }
 
   // Task operations
   async getTask(id: string): Promise<Task | undefined> {
-    return this.tasks.get(id);
+    const [task] = await db.select().from(tasks).where(eq(tasks.id, id));
+    return task || undefined;
   }
 
   async getTaskWithDetails(id: string): Promise<TaskWithDetails | undefined> {
-    const task = this.tasks.get(id);
-    if (!task) return undefined;
+    const [result] = await db
+      .select()
+      .from(tasks)
+      .innerJoin(teams, eq(tasks.teamId, teams.id))
+      .leftJoin(teamMembers, eq(tasks.responsibleMemberId, teamMembers.id))
+      .leftJoin(users, eq(teamMembers.userId, users.id))
+      .where(eq(tasks.id, id));
 
-    const team = this.teams.get(task.teamId)!;
-    let responsibleMember;
-    if (task.responsibleMemberId) {
-      const member = this.teamMembers.get(task.responsibleMemberId);
-      if (member) {
-        responsibleMember = { ...member, user: this.users.get(member.userId)! };
-      }
-    }
+    if (!result) return undefined;
 
-    return { ...task, team, responsibleMember };
+    const responsibleMember = result.team_members && result.users
+      ? { ...result.team_members, user: result.users }
+      : undefined;
+
+    return {
+      ...result.tasks,
+      team: result.teams,
+      responsibleMember,
+    };
   }
 
   async getTasksByTeam(teamId: string, includeCompleted = false): Promise<TaskWithDetails[]> {
-    const tasks = Array.from(this.tasks.values())
-      .filter(task => {
-        if (task.teamId !== teamId) return false;
-        if (includeCompleted) return true;
-        return task.status === TaskStatus.OPEN || task.status === TaskStatus.IN_PROGRESS || task.status === TaskStatus.BLOCKED;
-      });
+    let query = db
+      .select()
+      .from(tasks)
+      .innerJoin(teams, eq(tasks.teamId, teams.id))
+      .leftJoin(teamMembers, eq(tasks.responsibleMemberId, teamMembers.id))
+      .leftJoin(users, eq(teamMembers.userId, users.id))
+      .where(eq(tasks.teamId, teamId));
 
-    const result: TaskWithDetails[] = [];
-    for (const task of tasks) {
-      const withDetails = await this.getTaskWithDetails(task.id);
-      if (withDetails) result.push(withDetails);
+    if (!includeCompleted) {
+      query = db
+        .select()
+        .from(tasks)
+        .innerJoin(teams, eq(tasks.teamId, teams.id))
+        .leftJoin(teamMembers, eq(tasks.responsibleMemberId, teamMembers.id))
+        .leftJoin(users, eq(teamMembers.userId, users.id))
+        .where(and(
+          eq(tasks.teamId, teamId),
+          or(
+            eq(tasks.status, "Open"),
+            eq(tasks.status, "In-Progress"),
+            eq(tasks.status, "Blocked")
+          )
+        ));
     }
 
-    return result.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    const results = await query.orderBy(desc(tasks.updatedAt));
+
+    return results.map(result => ({
+      ...result.tasks,
+      team: result.teams,
+      responsibleMember: result.team_members && result.users
+        ? { ...result.team_members, user: result.users }
+        : undefined,
+    }));
   }
 
   async getTasksByResponsibleMember(memberId: string, includeCompleted = false): Promise<TaskWithDetails[]> {
-    const tasks = Array.from(this.tasks.values())
-      .filter(task => {
-        if (task.responsibleMemberId !== memberId) return false;
-        if (includeCompleted) return true;
-        return task.status === TaskStatus.OPEN || task.status === TaskStatus.IN_PROGRESS || task.status === TaskStatus.BLOCKED;
-      });
+    let query = db
+      .select()
+      .from(tasks)
+      .innerJoin(teams, eq(tasks.teamId, teams.id))
+      .innerJoin(teamMembers, eq(tasks.responsibleMemberId, teamMembers.id))
+      .innerJoin(users, eq(teamMembers.userId, users.id))
+      .where(eq(tasks.responsibleMemberId, memberId));
 
-    const result: TaskWithDetails[] = [];
-    for (const task of tasks) {
-      const withDetails = await this.getTaskWithDetails(task.id);
-      if (withDetails) result.push(withDetails);
+    if (!includeCompleted) {
+      query = db
+        .select()
+        .from(tasks)
+        .innerJoin(teams, eq(tasks.teamId, teams.id))
+        .innerJoin(teamMembers, eq(tasks.responsibleMemberId, teamMembers.id))
+        .innerJoin(users, eq(teamMembers.userId, users.id))
+        .where(and(
+          eq(tasks.responsibleMemberId, memberId),
+          or(
+            eq(tasks.status, "Open"),
+            eq(tasks.status, "In-Progress"),
+            eq(tasks.status, "Blocked")
+          )
+        ));
     }
 
-    return result.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    const results = await query.orderBy(desc(tasks.updatedAt));
+
+    return results.map(result => ({
+      ...result.tasks,
+      team: result.teams,
+      responsibleMember: { ...result.team_members, user: result.users },
+    }));
   }
 
   async createTask(insertTask: InsertTask): Promise<Task> {
-    const id = randomUUID();
-    const task: Task = {
-      ...insertTask,
-      id,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    this.tasks.set(id, task);
+    const [task] = await db
+      .insert(tasks)
+      .values(insertTask)
+      .returning();
 
     // Create snapshot
     await this.createTaskSnapshot(task, ChangeType.ADDED);
@@ -342,187 +321,226 @@ export class MemStorage implements IStorage {
   }
 
   async updateTask(id: string, updates: Partial<Task>): Promise<Task> {
-    const task = this.tasks.get(id);
+    const [task] = await db
+      .update(tasks)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(tasks.id, id))
+      .returning();
     if (!task) throw new Error("Task not found");
-    
-    const updated = { ...task, ...updates, updatedAt: new Date() };
-    this.tasks.set(id, updated);
 
     // Create snapshot
-    await this.createTaskSnapshot(updated, ChangeType.EDITED);
+    await this.createTaskSnapshot(task, ChangeType.EDITED);
 
-    return updated;
+    return task;
   }
 
   async deleteTask(id: string): Promise<void> {
-    const task = this.tasks.get(id);
+    const task = await this.getTask(id);
     if (task) {
       await this.createTaskSnapshot(task, ChangeType.DELETED);
-      this.tasks.delete(id);
+      await db.delete(tasks).where(eq(tasks.id, id));
     }
   }
 
   private async createTaskSnapshot(task: Task, changeType: string): Promise<void> {
     const today = new Date().toISOString().split('T')[0];
-    let minutes = await this.getMinutesByTeamAndDate(task.teamId, today);
+    let minutesRecord = await this.getMinutesByTeamAndDate(task.teamId, today);
     
-    if (!minutes) {
-      minutes = await this.createMinutes({
+    if (!minutesRecord) {
+      const team = await this.getTeam(task.teamId);
+      minutesRecord = await this.createMinutes({
         teamId: task.teamId,
         date: today,
-        venue: this.teams.get(task.teamId)?.defaultVenue || null,
+        venue: team?.defaultVenue || null,
         attendance: [],
       });
     }
 
     await this.createSnapshot({
-      minutesId: minutes.id,
+      minutesId: minutesRecord.id,
       taskId: task.id,
       changeType: changeType as any,
-      taskUpdatedAt: task.updatedAt,
+      taskUpdatedAt: task.updatedAt || new Date(),
       payload: task,
     });
   }
 
   // Minutes operations
   async getMinutes(id: string): Promise<Minutes | undefined> {
-    return this.minutes.get(id);
+    const [minute] = await db.select().from(minutes).where(eq(minutes.id, id));
+    return minute || undefined;
   }
 
   async getMinutesByTeamAndDate(teamId: string, date: string): Promise<Minutes | undefined> {
-    return Array.from(this.minutes.values())
-      .find(m => m.teamId === teamId && m.date === date);
+    const [minute] = await db
+      .select()
+      .from(minutes)
+      .where(and(eq(minutes.teamId, teamId), eq(minutes.date, date)));
+    return minute || undefined;
   }
 
   async getMinutesByTeam(teamId: string): Promise<MinutesWithSnapshots[]> {
-    const teamMinutes = Array.from(this.minutes.values())
-      .filter(m => m.teamId === teamId)
-      .sort((a, b) => b.date.localeCompare(a.date));
+    const minutesResults = await db
+      .select()
+      .from(minutes)
+      .innerJoin(teams, eq(minutes.teamId, teams.id))
+      .where(eq(minutes.teamId, teamId))
+      .orderBy(desc(minutes.date));
 
     const result: MinutesWithSnapshots[] = [];
-    for (const minute of teamMinutes) {
-      const snapshots = await this.getSnapshotsByMinutes(minute.id);
-      const team = this.teams.get(minute.teamId)!;
-      result.push({ ...minute, snapshots, team });
+    for (const minuteResult of minutesResults) {
+      const snapshotResults = await db
+        .select()
+        .from(snapshots)
+        .where(eq(snapshots.minutesId, minuteResult.minutes.id))
+        .orderBy(desc(snapshots.recordedAt));
+
+      result.push({
+        ...minuteResult.minutes,
+        team: minuteResult.teams,
+        snapshots: snapshotResults,
+      });
     }
 
     return result;
   }
 
   async createMinutes(insertMinutes: InsertMinutes): Promise<Minutes> {
-    const id = randomUUID();
-    const minutes: Minutes = {
-      ...insertMinutes,
-      id,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    this.minutes.set(id, minutes);
-    return minutes;
+    const [minute] = await db
+      .insert(minutes)
+      .values(insertMinutes)
+      .returning();
+    return minute;
   }
 
   async updateMinutes(id: string, updates: Partial<Minutes>): Promise<Minutes> {
-    const minutes = this.minutes.get(id);
-    if (!minutes) throw new Error("Minutes not found");
-    
-    const updated = { ...minutes, ...updates, updatedAt: new Date() };
-    this.minutes.set(id, updated);
-    return updated;
+    const [minute] = await db
+      .update(minutes)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(minutes.id, id))
+      .returning();
+    if (!minute) throw new Error("Minutes not found");
+    return minute;
   }
 
   // Snapshot operations
   async createSnapshot(insertSnapshot: InsertSnapshot): Promise<Snapshot> {
-    const id = randomUUID();
-    const snapshot: Snapshot = {
-      ...insertSnapshot,
-      id,
-      recordedAt: new Date(),
-    };
-    this.snapshots.set(id, snapshot);
+    const [snapshot] = await db
+      .insert(snapshots)
+      .values(insertSnapshot)
+      .returning();
     return snapshot;
   }
 
   async getSnapshotsByMinutes(minutesId: string): Promise<Snapshot[]> {
-    return Array.from(this.snapshots.values())
-      .filter(s => s.minutesId === minutesId)
-      .sort((a, b) => b.recordedAt.getTime() - a.recordedAt.getTime());
+    return await db
+      .select()
+      .from(snapshots)
+      .where(eq(snapshots.minutesId, minutesId))
+      .orderBy(desc(snapshots.recordedAt));
   }
 
   // Utility operations
   async getUserRole(userId: string): Promise<string> {
-    const user = this.users.get(userId);
+    const user = await this.getUser(userId);
     if (!user) return "Member";
     
     if (user.email === "asif.shakir@gmail.com") return "Superadmin";
     if (user.isAdmin) return "Admin";
     
-    const isCoordinator = Array.from(this.teamMembers.values())
-      .some(tm => tm.userId === userId && tm.isCoordinator);
+    const [member] = await db
+      .select()
+      .from(teamMembers)
+      .where(and(eq(teamMembers.userId, userId), eq(teamMembers.isCoordinator, true)));
     
-    return isCoordinator ? "Coordinator" : "Member";
+    return member ? "Coordinator" : "Member";
   }
 
   async isUserCoordinatorOfTeam(userId: string, teamId: string): Promise<boolean> {
-    return Array.from(this.teamMembers.values())
-      .some(tm => tm.userId === userId && tm.teamId === teamId && tm.isCoordinator);
+    const [member] = await db
+      .select()
+      .from(teamMembers)
+      .where(and(
+        eq(teamMembers.userId, userId),
+        eq(teamMembers.teamId, teamId),
+        eq(teamMembers.isCoordinator, true)
+      ));
+    return !!member;
   }
 
   async searchTasks(query: string, teamId?: string): Promise<TaskWithDetails[]> {
-    const searchTerm = query.toLowerCase();
-    const tasks = Array.from(this.tasks.values())
-      .filter(task => {
-        if (teamId && task.teamId !== teamId) return false;
-        
-        const titleMatch = task.title.toLowerCase().includes(searchTerm);
-        const notesMatch = task.notes?.toLowerCase().includes(searchTerm);
-        
-        // Search responsible member name
-        let memberMatch = false;
-        if (task.responsibleMemberId) {
-          const member = this.teamMembers.get(task.responsibleMemberId);
-          if (member) {
-            const user = this.users.get(member.userId);
-            if (user && user.displayName?.toLowerCase().includes(searchTerm)) {
-              memberMatch = true;
-            }
-          }
-        }
-        
-        return titleMatch || notesMatch || memberMatch;
-      });
+    const searchTerm = `%${query.toLowerCase()}%`;
+    
+    let dbQuery = db
+      .select()
+      .from(tasks)
+      .innerJoin(teams, eq(tasks.teamId, teams.id))
+      .leftJoin(teamMembers, eq(tasks.responsibleMemberId, teamMembers.id))
+      .leftJoin(users, eq(teamMembers.userId, users.id))
+      .where(
+        or(
+          ilike(tasks.title, searchTerm),
+          ilike(tasks.notes, searchTerm),
+          ilike(users.displayName, searchTerm)
+        )
+      );
 
-    const result: TaskWithDetails[] = [];
-    for (const task of tasks) {
-      const withDetails = await this.getTaskWithDetails(task.id);
-      if (withDetails) result.push(withDetails);
+    if (teamId) {
+      dbQuery = db
+        .select()
+        .from(tasks)
+        .innerJoin(teams, eq(tasks.teamId, teams.id))
+        .leftJoin(teamMembers, eq(tasks.responsibleMemberId, teamMembers.id))
+        .leftJoin(users, eq(teamMembers.userId, users.id))
+        .where(and(
+          eq(tasks.teamId, teamId),
+          or(
+            ilike(tasks.title, searchTerm),
+            ilike(tasks.notes, searchTerm),
+            ilike(users.displayName, searchTerm)
+          )
+        ));
+    }
+
+    const results = await dbQuery.orderBy(desc(tasks.updatedAt));
+
+    return results.map(result => ({
+      ...result.tasks,
+      team: result.teams,
+      responsibleMember: result.team_members && result.users
+        ? { ...result.team_members, user: result.users }
+        : undefined,
+    }));
+  }
+
+  async searchUsers(query: string): Promise<User[]> {
+    const searchTerm = `%${query.toLowerCase()}%`;
+    return await db
+      .select()
+      .from(users)
+      .where(
+        or(
+          ilike(users.email, searchTerm),
+          ilike(users.displayName, searchTerm)
+        )
+      );
+  }
+
+  async searchTeams(query: string): Promise<TeamWithMembers[]> {
+    const searchTerm = `%${query.toLowerCase()}%`;
+    const teamResults = await db
+      .select()
+      .from(teams)
+      .where(ilike(teams.name, searchTerm));
+
+    const result: TeamWithMembers[] = [];
+    for (const team of teamResults) {
+      const withMembers = await this.getTeamWithMembers(team.id);
+      if (withMembers) result.push(withMembers);
     }
 
     return result;
   }
-
-  async searchUsers(query: string): Promise<User[]> {
-    const searchTerm = query.toLowerCase();
-    return Array.from(this.users.values())
-      .filter(user => {
-        const nameMatch = user.displayName?.toLowerCase().includes(searchTerm);
-        const emailMatch = user.email.toLowerCase().includes(searchTerm);
-        return nameMatch || emailMatch;
-      });
-  }
-
-  async searchTeams(query: string): Promise<TeamWithMembers[]> {
-    const searchTerm = query.toLowerCase();
-    const teams = await this.getAllTeamsWithMembers();
-    
-    return teams.filter(team => {
-      const nameMatch = team.name.toLowerCase().includes(searchTerm);
-      const memberMatch = team.members.some(member => 
-        member.user.displayName?.toLowerCase().includes(searchTerm) ||
-        member.user.email.toLowerCase().includes(searchTerm)
-      );
-      return nameMatch || memberMatch;
-    });
-  }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
