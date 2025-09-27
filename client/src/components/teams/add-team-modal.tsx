@@ -3,6 +3,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,7 +57,12 @@ export function AddTeamModal({ open, onClose }: AddTeamModalProps) {
   });
 
   const onSubmit = (data: CreateTeamForm) => {
-    createTeamMutation.mutate(data);
+    // Convert empty string to undefined for optional fields
+    const teamData = {
+      ...data,
+      defaultVenue: data.defaultVenue?.trim() || undefined,
+    };
+    createTeamMutation.mutate(teamData);
   };
 
   return (
@@ -64,6 +70,9 @@ export function AddTeamModal({ open, onClose }: AddTeamModalProps) {
       <DialogContent className="w-full max-w-md" data-testid="add-team-modal">
         <DialogHeader>
           <DialogTitle>Add New Team</DialogTitle>
+          <DialogDescription>
+            Create a new team to organize tasks and manage members.
+          </DialogDescription>
         </DialogHeader>
         
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

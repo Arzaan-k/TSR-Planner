@@ -14,11 +14,11 @@ export default function Notes() {
 
   // Fetch minutes for the selected team
   const { data: minutes = [], isLoading } = useQuery({
-    queryKey: ["/api/minutes", selectedTeam],
+    queryKey: ["/api/minutes", selectedTeam?.id],
     queryFn: async () => {
       if (!selectedTeam) return [];
       
-      const response = await fetch(`/api/minutes?teamId=${selectedTeam}`, { 
+      const response = await fetch(`/api/minutes?teamId=${selectedTeam.id}`, { 
         credentials: "include" 
       });
       if (response.ok) {

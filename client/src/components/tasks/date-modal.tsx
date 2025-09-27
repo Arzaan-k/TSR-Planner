@@ -4,6 +4,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,6 +99,9 @@ export function DateModal({ open, onClose, minutes, team }: DateModalProps) {
       <DialogContent className="w-full max-w-md" data-testid="date-modal">
         <DialogHeader>
           <DialogTitle>Meeting Details</DialogTitle>
+          <DialogDescription>
+            Set the meeting date, venue, and mark attendance for team members.
+          </DialogDescription>
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-4">

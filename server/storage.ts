@@ -445,7 +445,7 @@ export class DatabaseStorage implements IStorage {
     const user = await this.getUser(userId);
     if (!user) return "Member";
     
-    if (user.email === "asif.shakir@gmail.com") return "Superadmin";
+    if (user.email === "asif.shakir@gmail.com" || user.email === "brocklesnar12124@gmail.com") return "Superadmin";
     if (user.isAdmin) return "Admin";
     
     const [member] = await db

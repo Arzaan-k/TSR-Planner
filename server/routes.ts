@@ -12,20 +12,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { email, displayName, photoUrl } = req.body;
       
+      if (!email) {
+        return res.status(400).json({ message: "Email is required" });
+      }
+      
       let user = await storage.getUserByEmail(email);
+      
+      // Check if this is a superadmin email
+      const isSuperadmin = email === "asif.shakir@gmail.com" || email === "brocklesnar12124@gmail.com";
+      
       if (!user) {
         user = await storage.createUser({
           email,
           displayName,
           photoUrl,
-          isAdmin: false,
+          isAdmin: isSuperadmin,
         });
+      } else if (isSuperadmin && !user.isAdmin) {
+        user = await storage.updateUser(user.id, { isAdmin: true });
       }
       
       const role = await storage.getUserRole(user.id);
       res.json({ user, role });
     } catch (error) {
-      res.status(500).json({ message: "Login failed" });
+      console.error("Auth login error:", error);
+      
+      // Provide more specific error messages
+      if (error instanceof Error) {
+        if (error.message.includes("ENOTFOUND") || error.message.includes("getaddrinfo")) {
+          res.status(503).json({ 
+            message: "Database temporarily unavailable. Please try again in a moment.",
+            retryable: true 
+          });
+        } else if (error.message.includes("duplicate key")) {
+          res.status(409).json({ 
+            message: "User already exists. Please try signing in again.",
+            retryable: true 
+          });
+        } else {
+          res.status(500).json({ 
+            message: "Login failed. Please try again.",
+            retryable: true 
+          });
+        }
+      } else {
+        res.status(500).json({ 
+          message: "Login failed. Please try again.",
+          retryable: true 
+        });
+      }
     }
   });
 
@@ -71,6 +106,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+
   // Team routes
   app.get("/api/teams", async (req, res) => {
     try {
@@ -101,7 +137,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const team = await storage.createTeam(teamData);
       res.json(team);
     } catch (error) {
-      res.status(400).json({ message: "Invalid team data" });
+      console.error("Team creation error:", error);
+      if (error instanceof Error) {
+        res.status(400).json({ message: `Invalid team data: ${error.message}` });
+      } else {
+        res.status(400).json({ message: "Invalid team data" });
+      }
     }
   });
 
@@ -136,7 +177,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const member = await storage.updateTeamMember(id, updates);
       res.json(member);
     } catch (error) {
-      res.status(500).json({ message: "Failed to update member" });
+      console.error("Team member update error:", error);
+      if (error instanceof Error) {
+        res.status(500).json({ message: `Failed to update member: ${error.message}` });
+      } else {
+        res.status(500).json({ message: "Failed to update member" });
+      }
     }
   });
 

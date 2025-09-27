@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AuthGuard } from "@/components/auth/auth-guard";
 import { AppShell } from "@/components/layout/app-shell";
-import { DateCard } from "@/components/tasks/date-card";
+import { DateCard } from "@/components/teams/date-card";
 import { TaskCard } from "@/components/tasks/task-card";
 import { AddTaskModal } from "@/components/tasks/add-task-modal";
 import { FAB } from "@/components/ui/fab";
@@ -30,7 +30,7 @@ export default function Tasks() {
       if (response.ok) {
         const teams = await response.json();
         const team = teams.find((t: any) => t.id === selectedTeam);
-        return team?.members?.find((m: any) => m.userId === user.id);
+        return team?.members?.find((m: any) => m.userId === user.id) || null;
       }
       return null;
     },
@@ -39,7 +39,7 @@ export default function Tasks() {
 
   // Fetch tasks based on role and team
   const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ["/api/tasks", selectedTeam, userTeamMember?.id, role],
+    queryKey: ["/api/tasks", selectedTeam?.id, userTeamMember?.id, role],
     queryFn: async () => {
       if (!selectedTeam) return [];
       
@@ -52,12 +52,16 @@ export default function Tasks() {
         params.append("memberId", userTeamMember.id);
       } else {
         // Admins, Superadmins, and Coordinators see all team tasks
-        params.append("teamId", selectedTeam);
+        params.append("teamId", selectedTeam.id);
       }
       
       const response = await fetch(`${url}?${params}`, { credentials: "include" });
       if (response.ok) {
-        return response.json();
+        const allTasks = await response.json();
+        // Filter to show only open tasks (Open, In-Progress, Blocked)
+        return allTasks.filter((task: any) => 
+          ["Open", "In-Progress", "Blocked"].includes(task.status)
+        );
       }
       return [];
     },
@@ -66,17 +70,21 @@ export default function Tasks() {
 
   // Search tasks
   const { data: searchResults = [] } = useQuery({
-    queryKey: ["/api/tasks/search", debouncedQuery, selectedTeam],
+    queryKey: ["/api/tasks/search", debouncedQuery, selectedTeam?.id],
     queryFn: async () => {
       if (!debouncedQuery || !selectedTeam) return [];
       
       const params = new URLSearchParams();
       params.append("q", debouncedQuery);
-      params.append("teamId", selectedTeam);
+      params.append("teamId", selectedTeam.id);
       
       const response = await fetch(`/api/tasks/search?${params}`, { credentials: "include" });
       if (response.ok) {
-        return response.json();
+        const allTasks = await response.json();
+        // Filter to show only open tasks (Open, In-Progress, Blocked)
+        return allTasks.filter((task: any) => 
+          ["Open", "In-Progress", "Blocked"].includes(task.status)
+        );
       }
       return [];
     },

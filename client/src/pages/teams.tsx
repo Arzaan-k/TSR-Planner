@@ -16,26 +16,7 @@ export default function Teams() {
   const [showAddTeamModal, setShowAddTeamModal] = useState(false);
   const { searchQuery, setSearchQuery, debouncedQuery } = useSearch();
 
-  // Only admins can access this page
-  if (role !== "Admin" && role !== "Superadmin") {
-    return (
-      <AuthGuard>
-        <AppShell>
-          <div className="flex items-center justify-center h-full p-4" data-testid="access-denied">
-            <div className="text-center">
-              <h2 className="text-lg font-semibold text-foreground mb-2">
-                Access Denied
-              </h2>
-              <p className="text-muted-foreground">
-                You don't have permission to access team management.
-              </p>
-            </div>
-          </div>
-        </AppShell>
-      </AuthGuard>
-    );
-  }
-
+  // All hooks must be called before any conditional returns
   const { data: teams = [], isLoading } = useQuery({
     queryKey: ["/api/teams"],
   });
@@ -57,6 +38,26 @@ export default function Teams() {
     },
     enabled: !!debouncedQuery,
   });
+
+  // Only admins can access this page - check after all hooks
+  if (role !== "Admin" && role !== "Superadmin") {
+    return (
+      <AuthGuard>
+        <AppShell>
+          <div className="flex items-center justify-center h-full p-4" data-testid="access-denied">
+            <div className="text-center">
+              <h2 className="text-lg font-semibold text-foreground mb-2">
+                Access Denied
+              </h2>
+              <p className="text-muted-foreground">
+                You don't have permission to access team management.
+              </p>
+            </div>
+          </div>
+        </AppShell>
+      </AuthGuard>
+    );
+  }
 
   const displayTeams = debouncedQuery ? searchResults : teams;
 

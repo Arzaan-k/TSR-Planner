@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useTeam } from "@/hooks/use-team";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -15,18 +14,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useQuery } from "@tanstack/react-query";
 import { signOutUser } from "@/lib/auth";
 import { useLocation } from "wouter";
 
 export function Header() {
   const { user } = useAuth();
-  const { selectedTeam, setSelectedTeam } = useTeam();
+  const { selectedTeam, setSelectedTeam, teams } = useTeam();
   const [, setLocation] = useLocation();
-
-  const { data: teams = [] } = useQuery<any[]>({
-    queryKey: ["/api/teams"],
-  });
 
   const handleSignOut = async () => {
     try {
@@ -60,12 +54,19 @@ export function Header() {
       </div>
       
       <div className="flex-1 mx-4">
-        <Select value={selectedTeam || ""} onValueChange={setSelectedTeam} data-testid="team-selector">
+        <Select 
+          value={selectedTeam?.id || ""} 
+          onValueChange={(teamId) => {
+            const team = teams.find(t => t.id === teamId);
+            setSelectedTeam(team || null);
+          }} 
+          data-testid="team-selector"
+        >
           <SelectTrigger className="w-full">
             <SelectValue placeholder="Select Team" />
           </SelectTrigger>
           <SelectContent>
-            {teams.map((team: any) => (
+            {teams.map((team) => (
               <SelectItem key={team.id} value={team.id} data-testid={`team-option-${team.id}`}>
                 {team.name}
               </SelectItem>

@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useAuth } from "@/hooks/use-auth";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
+import { useDebouncedToast } from "@/hooks/use-debounced-toast";
 import { User, Calendar, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +18,7 @@ interface TaskCardProps {
 
 export function TaskCard({ task, canEdit }: TaskCardProps) {
   const { user, role } = useAuth();
-  const { toast } = useToast();
+  const { showDebouncedToast, showImmediateToast } = useDebouncedToast();
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState<string | null>(null);
 
@@ -29,11 +29,11 @@ export function TaskCard({ task, canEdit }: TaskCardProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      toast({ title: "Task updated successfully" });
+      showDebouncedToast("Task updated successfully");
       setIsEditing(null);
     },
     onError: () => {
-      toast({ title: "Failed to update task", variant: "destructive" });
+      showImmediateToast("Failed to update task", "destructive");
     },
   });
 

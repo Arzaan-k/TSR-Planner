@@ -13,15 +13,15 @@ export function DateCard() {
   const { data: minutes } = useQuery({
     queryKey: ["/api/minutes", selectedTeam],
     queryFn: async () => {
-      if (!selectedTeam) return null;
+      if (!selectedTeam) return undefined;
       const response = await fetch(`/api/minutes?teamId=${selectedTeam}`, {
         credentials: "include",
       });
       if (response.ok) {
         const allMinutes = await response.json();
-        return allMinutes.find((m: any) => m.date === today);
+        return allMinutes.find((m: any) => m.date === today) || undefined;
       }
-      return null;
+      return undefined;
     },
     enabled: !!selectedTeam,
   });
@@ -29,13 +29,13 @@ export function DateCard() {
   const { data: team } = useQuery({
     queryKey: ["/api/teams", selectedTeam],
     queryFn: async () => {
-      if (!selectedTeam) return null;
+      if (!selectedTeam) return undefined;
       const response = await fetch(`/api/teams`, { credentials: "include" });
       if (response.ok) {
         const teams = await response.json();
-        return teams.find((t: any) => t.id === selectedTeam);
+        return teams.find((t: any) => t.id === selectedTeam) || undefined;
       }
-      return null;
+      return undefined;
     },
     enabled: !!selectedTeam,
   });

@@ -36,15 +36,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
         if (firebaseUser) {
-          // User is signed in, get or create user in our backend
-          const response = await apiRequest("POST", "/api/auth/login", {
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName,
-            photoUrl: firebaseUser.photoURL,
-          });
+          // Retry logic for database connection issues
+          let retries = 3;
+          let lastError;
           
-          const data = await response.json();
-          setUser(data.user, data.role);
+          while (retries > 0) {
+            try {
+              // User is signed in, get or create user in our backend
+              const response = await apiRequest("POST", "/api/auth/login", {
+                email: firebaseUser.email,
+                displayName: firebaseUser.displayName,
+                photoUrl: firebaseUser.photoURL,
+              });
+
+              const data = await response.json();
+              setUser(data.user, data.role);
+              break; // Success, exit retry loop
+            } catch (apiError) {
+              lastError = apiError;
+              console.error(`API request failed (${4 - retries}/3):`, apiError);
+              
+              // Check if it's a retryable error (database connection issues)
+              if (apiError.message?.includes("500") || 
+                  apiError.message?.includes("503") || 
+                  apiError.message?.includes("Login failed") ||
+                  apiError.message?.includes("temporarily unavailable")) {
+                retries--;
+                if (retries > 0) {
+                  // Wait before retry (exponential backoff)
+                  await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries)));
+                  continue;
+                }
+              }
+              throw apiError;
+            }
+          }
+          
+          if (retries === 0 && lastError) {
+            throw lastError;
+          }
         } else {
           // User is signed out
           setUser(null);
@@ -52,8 +82,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch (error) {
         console.error("Auth state change error:", error);
-        setUser(null);
-        setRole("Member");
+        // Don't clear user state on database errors - keep Firebase auth state
+        // Only clear if it's a real auth error
+        if (error.message?.includes("401") || error.message?.includes("403")) {
+          setUser(null);
+          setRole("Member");
+        } else {
+          // For database errors, create a temporary user state
+          setUser({
+            id: firebaseUser.uid,
+            email: firebaseUser.email || "",
+            displayName: firebaseUser.displayName || undefined,
+            photoUrl: firebaseUser.photoURL || undefined,
+            isAdmin: false,
+          }, "Member");
+        }
       } finally {
         setLoading(false);
       }

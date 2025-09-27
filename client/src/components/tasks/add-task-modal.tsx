@@ -4,6 +4,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,13 +56,13 @@ export function AddTaskModal({ open, onClose }: AddTaskModalProps) {
   });
 
   const { data: team } = useQuery({
-    queryKey: ["/api/teams", selectedTeam],
+    queryKey: ["/api/teams", selectedTeam?.id],
     queryFn: async () => {
       if (!selectedTeam) return null;
       const response = await fetch("/api/teams", { credentials: "include" });
       if (response.ok) {
         const teams = await response.json();
-        return teams.find((t: any) => t.id === selectedTeam);
+        return teams.find((t: any) => t.id === selectedTeam.id) || null;
       }
       return null;
     },
@@ -70,11 +71,18 @@ export function AddTaskModal({ open, onClose }: AddTaskModalProps) {
 
   const createTaskMutation = useMutation({
     mutationFn: async (data: CreateTaskForm) => {
-      const response = await apiRequest("POST", "/api/tasks", {
+      if (!selectedTeam?.id) {
+        throw new Error("No team selected");
+      }
+      
+      const taskData = {
         ...data,
-        teamId: selectedTeam,
+        teamId: selectedTeam.id,
         dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : null,
-      });
+        responsibleMemberId: data.responsibleMemberId === "unassigned" ? null : data.responsibleMemberId,
+      };
+      
+      const response = await apiRequest("POST", "/api/tasks", taskData);
       return response.json();
     },
     onSuccess: () => {
@@ -101,6 +109,9 @@ export function AddTaskModal({ open, onClose }: AddTaskModalProps) {
       <DialogContent className="w-full max-w-md" data-testid="add-task-modal">
         <DialogHeader>
           <DialogTitle>Add New Task</DialogTitle>
+          <DialogDescription>
+            Create a new task for the selected team. Fill in the details below.
+          </DialogDescription>
         </DialogHeader>
         
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -168,12 +179,12 @@ export function AddTaskModal({ open, onClose }: AddTaskModalProps) {
           
           <div>
             <Label htmlFor="responsibleMember">Responsible Member</Label>
-            <Select onValueChange={(value) => setValue("responsibleMemberId", value || undefined)}>
+            <Select onValueChange={(value) => setValue("responsibleMemberId", value === "unassigned" ? undefined : value)}>
               <SelectTrigger className="mt-1" data-testid="select-task-assignee">
                 <SelectValue placeholder="Unassigned" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Unassigned</SelectItem>
+                <SelectItem value="unassigned">Unassigned</SelectItem>
                 {team?.members?.map((member: any) => (
                   <SelectItem key={member.id} value={member.id}>
                     {member.user.displayName || member.user.email}

@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: tsr-planner
+    env: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tsr-planner-db
+          property: connectionString
+      - key: VITE_FIREBASE_API_KEY
+        sync: false
+      - key: VITE_FIREBASE_PROJECT_ID
+        sync: false
+      - key: VITE_FIREBASE_APP_ID
+        sync: false
+    healthCheckPath: /api/users
+    autoDeploy: true
+    branch: main
+
+databases:
+  - name: tsr-planner-db
+    plan: starter
+    databaseName: tsrplanner
+    user: tsrplanner
