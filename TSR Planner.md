@@ -1,0 +1,314 @@
+# TSR Planner — Detailed Product Specification
+
+Date: 2025-09-03
+Version: 3.0 (recreated)
+Owner: Core product team
+Status: Active
+
+Purpose: Provide a single, clear source of truth for product scope, behaviors, roles, and data semantics. This is a product specification (not an implementation guide) with enough precision to design, build, and test the app end-to-end.
+
+---
+
+## 1) Overview
+
+TSR Planner is a lightweight, mobile‑first workspace for small teams to:
+- Capture meeting context (date, venue) and attendance.
+- Create, view, and update team tasks in real time.
+- Automatically record a dated history of task changes (minutes) for accountability.
+
+Central concept: Team. Every task and minutes record belongs to exactly one team and a specific date.
+
+Goals
+- Fast: seconds to first edit on mobile.
+- Focused: everything is team‑scoped by default.
+- Traceable: discoverable, dated minutes linked to task changes.
+
+Non‑Goals
+- Deep project/program management (epics, sprints, Gantt, etc.).
+- Enterprise multi‑tenant governance.
+- Notifications/reminders/escalations (future consideration).
+
+---
+
+## 2) Personas & Roles
+
+- Superadmin: Fixed account (asif.shakir@gmail.com and brocklesnar12124@gmail.com). Full administrative capabilities, cannot be demoted.
+- Admin: Full read/write across all teams. Manages teams, memberships, and user Admin flags.
+- Coordinator: Can create/update tasks and minutes for teams they coordinate. Cannot manage teams/memberships or user Admin flags.
+- Member: Reads their teams. May edit Status and Notes only on tasks where they are responsible.
+
+High‑level Permissions
+- Read: Members (their teams), Coordinators (their teams), Admins/Superadmin (all teams).
+- Write tasks/minutes: Coordinators (their teams), Admins/Superadmin (all teams). Members: Status and Notes on their assigned tasks only.
+- Manage teams/memberships & user Admin flags: Admins/Superadmin only (superadmin immutable).
+
+---
+
+## 3) Core Concepts
+
+- Team: Primary grouping; owns tasks and dated minutes.
+- Task: Unit of work with fields defined below; exactly one responsible team and one responsible member (may be Unassigned until set).
+- Minutes (by Date): For a team+date, the immutable list of task snapshots (Added/Edited/Deleted), plus attendance and venue.
+- Attendance: Presence list of team members for a team+date.
+- Snapshot: Full capture of a task when it changes, labeled Added/Edited/Deleted.
+
+Appendix A lists initial/seed teams and specific membership where relevant.
+
+---
+
+## 4) Functional Requirements
+
+### 4.1 Auth & Session
+- Google sign‑in required to access the app.
+- After auth, the app resolves role(s) from the Users collection.
+- Superadmin is recognized by exact email match and is immutable.
+
+### 4.2 App Shell & Navigation
+- Header: App title, user avatar (opens Profile/Logout), persistent Team selector.
+- Tabs: Tasks, Notes, Teams (admin only), Users (admin only), Profile.
+- Tasks and Notes require a selected team. Profile/Teams/Users do not.
+- Navigating away does not clear the selected team; returning reuses it.
+
+### 4.3 Team Context & Date Card
+- Selecting a team updates Tasks and Notes context immediately.
+- Tasks screen shows a Date Card for the current team+date displaying Date, Venue, and Present/Total.
+- Clicking the Date Card opens a modal to set Date, Venue, and attendance (per‑member toggles plus Select All). Save updates the card immediately.
+
+### 4.4 Tasks
+- Visible List: Open tasks only.
+  - For Admins/Superadmin/Coordinators: shows all open tasks for the selected team, newest updated first.
+  - For Members: shows only open tasks where they are the responsible member.
+- Add Task: FAB opens modal (Admin/Superadmin/Coordinators only). Title required; defaults apply.
+- Task Modal: Shows all fields; respects permissions.
+- Inline Editing: Allowed per field and permission. Autosave behavior below.
+- Member Editing Limits: Members can change only Status and Notes on tasks they own.
+- Live Search: Case‑insensitive, 200ms debounce. OR logic across title, notes, responsible member name, and any team member name (to see that member’s tasks if responsible).
+- Closing Behavior: Changing Status from open→closed removes the task from the open list and records an Edited snapshot for the current date.
+
+### 4.5 Notes (Minutes)
+- Date List: Reverse‑chronological list of dates with snapshots for the selected team.
+- Detail View: Read‑only cards for each snapshot labeled Added/Edited/Deleted. Deleted snapshots show prior task info in a subdued style. Edited cards may highlight changed fields.
+- Live Search: Filters the date list and, within a selected date, filters snapshot cards (OR across title, notes, change label, responsible member name).
+
+### 4.6 Users (Admin)
+- User List: Name (if available), Email, Role badges (Member, Coordinator, Admin, Superadmin).
+- Admin Toggle: For any non‑superadmin user, Admins can toggle Admin on/off. Updates immediately with a toast. Superadmin toggle disabled.
+- Coordinator Summary: Shows count of teams a user coordinates; click reveals a read‑only popover list.
+- Search & Sort: Search across name/email/role; default sort Admin desc, then Name asc; columns sortable.
+- No destructive actions; team membership changes happen on Teams.
+
+### 4.7 Teams (Admin)
+- Team List: Name plus counts (members, coordinators).
+- Team Detail: Members list (coordinator indicator), default venue, promote/demote coordinator actions, add member control (email). Autosaves per field.
+- Guard: Demoting the last remaining coordinator is blocked.
+- Add Team: FAB opens modal to create a team (name, default venue, initial members, initial coordinators).
+- Search: Case‑insensitive across team name and member/coordinator names. Optional in‑team filter for members.
+
+### 4.8 Profile
+- Shows user info and role. If admin, shows admin‑specific links. No team required.
+
+---
+
+## 5) Data Model (Conceptual)
+
+### 5.1 Entities
+
+User
+- id, email, displayName?, photoUrl?
+- isAdmin: boolean (derived or stored)
+- isSuperadmin: boolean (derived from email match)
+
+Team
+- id, name (unique), defaultVenue?
+
+TeamMember
+- id, teamId → Team, userId → User, isCoordinator: boolean
+
+Task
+- id, teamId → Team, responsibleMemberId? → TeamMember
+- title (1–120), notes?, status (Open | In‑Progress | Blocked | Done | Canceled), priority (Low | Medium | High)
+- dueDate?
+- createdAt, updatedAt
+
+Minutes (by Team+Date)
+- id, teamId → Team, date (yyyy‑mm‑dd), venue?, attendance: [TeamMemberId]
+
+Snapshot
+- id, minutesId → Minutes, taskId → Task (for reference), changeType (Added | Edited | Deleted)
+- recordedAt (when snapshot saved), taskUpdatedAt (the task’s updatedAt at that time)
+- payload: Full copy of task fields at change time (title, notes, status, priority, dueDate, teamId, responsibleMemberId, createdAt, updatedAt)
+
+### 5.2 Field Rules
+- Title required; all other fields optional unless noted.
+- Responsible Team required; Responsible Member must be a member of that team. May be Unassigned until set; must be set before closing a task (Done/Canceled).
+- Created/Updated timestamps set automatically; any saved change updates updatedAt.
+- Snapshots are immutable records; multiple snapshots can exist for a task in a single date.
+
+---
+
+## 6) Business Rules
+
+- One team per task; cross‑team task moves are not supported in this version.
+- Open task list shows only Open/In‑Progress/Blocked. Done/Canceled are closed and hidden from Tasks; remain in history via snapshots.
+- Each saved change to a task creates an Edited snapshot in the current team+date minutes.
+- Deletion (if exposed) creates a Deleted snapshot and removes the task from active lists (no recovery in scope).
+- Attendance/venue update reflects immediately on the Date Card.
+- Removing a member who owns tasks sets those tasks to Unassigned and flags for reassignment.
+- Team deletion is not allowed if tasks or minutes exist (delete flow out of scope).
+- Guard last coordinator: At least one coordinator must remain per team.
+
+---
+
+## 7) Permission Model (Detailed)
+
+- Superadmin: Global admin, immutable. Toggle hidden/disabled in Users.
+- Admin: Full read/write on all teams; can manage teams, memberships, and user Admin flags.
+- Coordinator: Read/write tasks and minutes for their teams only; cannot manage teams/memberships or user Admin flags.
+- Member: Reads their teams; limited write to Status and Notes on tasks where they are responsible.
+
+Edge Cases
+- Attempted restricted edits are ignored visually and produce a subtle “insufficient permission” toast.
+- Demoting last coordinator is blocked with a clear message.
+
+---
+
+## 8) UX Principles & Behaviors
+
+Autosave
+- Non‑text fields save immediately on change.
+- Text inputs/notes save on blur.
+- Toast confirmations are debounced (~1s) and consolidate rapid saves.
+
+Search
+- Case‑insensitive, diacritics‑insensitive, ignores punctuation.
+- OR across relevant fields for each context (Tasks: title/notes/responsible member; Notes: title/notes/change label/responsible member; Users/Teams as described).
+- Debounce ~200ms; does not shift selection or scroll. Clearing restores full list.
+
+Interaction
+- FAB for creation (tasks, teams); modals close on successful submit with confirmation toast.
+- Read‑only snapshot cards in Notes; never open edit modals.
+
+Mobile‑first
+- Primary flows optimized for small screens: minimal taps, clear labels, forgiving inputs.
+
+Accessibility
+- Keyboard navigable, ARIA where appropriate, color contrast AA.
+
+---
+
+## 9) Non‑Functional Requirements
+
+- Performance: First interactive ≤ 2s on modern mobile; search/filter < 100ms after debounce.
+- Reliability: No data loss on autosave; optimistic UI reconciles conflicts sensibly.
+- Security: Firebase auth; role checks server‑side in data access; superadmin immutable.
+- Privacy: Emails visible to admins and members within shared teams; no public data exposure.
+
+---
+
+## 10) Analytics & Success Indicators
+
+- Adoption: % meetings with minutes created per team.
+- Engagement: In‑meeting task update ratio; median time to first edit.
+- Data Quality: Attendance completeness; task freshness (days since last update for open tasks).
+
+---
+
+## 11) Roadmap & Open Questions
+
+Near Term
+- Live attendance count UI; filtered assignee list; per‑task activity panel; Users screen (admin flag management) if not yet shipped.
+
+Mid / Long Term
+- Scalable data store; digest/summary exports; finer role options; cross‑team task moves.
+
+Open Questions
+- Default team on task creation when no team is selected?
+- Need a viewer‑only role distinct from Member?
+- Richer categorization (labels/tags)?
+
+---
+
+## 12) Risks & Mitigations
+
+- Scope creep into project management → keep strict non‑goals; small iterations.
+- Minute noise from trivial edits → debounce toasts; consider grouping snapshot display later.
+- Attendance incompleteness → make Date Card prominent; keep modal quick and forgiving.
+
+---
+
+## 13) Tech Stack & Architecture Notes
+
+Frontend
+- Next.js with React Server Components (RSC). Server‑first; minimal client JS.
+
+Database & ORM
+- SQLite for simplicity; Prisma for type‑safe schema and access.
+
+Package Management
+- pnpm.
+
+UI Components
+- shadcn/ui on Radix UI primitives.
+
+Architecture Notes
+- No traditional API routes; data fetched in RSC. SQLite co‑located with the app.
+
+---
+
+## 14) Acceptance Criteria (High‑Level)
+
+Tasks
+- Create task with Title only; defaults apply (Status Open, Priority Medium, Responsible Team = selected team, Responsible Member = Unassigned).
+- Coordinators/Admin/Superadmin can edit all fields; Members only Status and Notes on their assigned tasks.
+- Changing open→closed removes from Tasks and writes an Edited snapshot for the current date.
+- Live search filters visible tasks by title/notes/responsible member in real time.
+
+Notes
+- Selecting a date shows all snapshots for that team+date labeled Added/Edited/Deleted.
+- Deleted snapshots render subdued; cards are read‑only.
+- Live search filters both date list and snapshot cards within a date.
+
+Teams (Admin)
+- Create team; set default venue; manage membership and coordinator flags.
+- Block demoting the last remaining coordinator with a clear message.
+
+Users (Admin)
+- Toggle Admin on any non‑superadmin user; immediate update with toast.
+- Superadmin always displays as Admin with disabled toggle.
+
+Attendance & Venue
+- Date Card shows Date, Venue, Present/Total. Modal supports Select All and per‑member toggles; changes reflect on close.
+
+Auth & Roles
+- Google sign‑in gates access; UI shows only permitted tabs/actions by role.
+
+---
+
+## 15) Glossary
+
+- Minutes: Dated record for a team including attendance/venue and task change snapshots accrued that date.
+- Snapshot: Immutable capture of a task at change time, labeled Added/Edited/Deleted.
+- Open Task: Status ∈ {Open, In‑Progress, Blocked}; appears on Tasks.
+- Closed Task: Status ∈ {Done, Canceled}; hidden from Tasks, visible only in snapshots.
+- Responsible Team/Member: Owning team and the single accountable member within that team.
+
+---
+
+## 16) Appendix A — Seed Teams & Membership
+
+Teams
+- Creative, CC, NCF, SS, Research, Marketing, Gems, Tech, Finance, Gifts, HR, Strategy, Coordinators
+
+Strategy Team
+- Members: asif.shakir@gmail.com, abbas.naheed@gmail.com
+- Coordinator: abbas.naheed@gmail.com
+
+---
+
+## 17) Change Log
+
+- v3.0 (2025‑09‑03) — Recreated, consolidated spec with structured sections, clarified roles, data semantics, snapshots, acceptance criteria, and glossary.
+- v2.1 — Expanded product spec with Users screen, task fields, snapshot semantics, permission edge cases, and search behavior details.
+- v2.0 — Refocused product specification with clarified roles and minutes snapshots.
+- v1.0 — Original combined product + technical specification.
+

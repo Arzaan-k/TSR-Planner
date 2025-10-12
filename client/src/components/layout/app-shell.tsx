@@ -10,9 +10,9 @@ export function AppShell({ children }: AppShellProps) {
   const { user, role } = useAuth();
 
   return (
-    <div className="min-h-screen flex flex-col bg-background" data-testid="app-shell">
+    <div className="min-h-screen flex flex-col bg-background overflow-x-hidden" data-testid="app-shell">
       <Header />
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 overflow-y-auto overflow-x-hidden">
         {children}
       </main>
       <BottomNavigation userRole={role} />

@@ -27,13 +27,35 @@ export function TaskCard({ task, canEdit }: TaskCardProps) {
       const response = await apiRequest("PATCH", `/api/tasks/${id}`, updates);
       return response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+    onMutate: async ({ id, updates }) => {
+      // Optimistically update any tasks lists in cache
+      const updater = (old: any[] | undefined) => {
+        if (!old) return old;
+        return old.map((t: any) => (t.id === id ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t));
+      };
+
+      queryClient.setQueriesData({ queryKey: ["/api/tasks"] }, updater);
+      queryClient.setQueriesData({ queryKey: ["/api/tasks", "search"] }, updater);
+    },
+    onSuccess: (data) => {
+      // Ensure caches have the server-normalized task
+      const replacer = (old: any[] | undefined) => {
+        if (!old) return old;
+        return old.map((t: any) => (t.id === data.id ? data : t));
+      };
+      queryClient.setQueriesData({ queryKey: ["/api/tasks"] }, replacer);
+      queryClient.setQueriesData({ queryKey: ["/api/tasks", "search"] }, replacer);
+
       showDebouncedToast("Task updated successfully");
       setIsEditing(null);
     },
     onError: () => {
       showImmediateToast("Failed to update task", "destructive");
+    },
+    onSettled: () => {
+      // Finally refetch to be consistent with backend
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks", "search"] });
     },
   });
 
