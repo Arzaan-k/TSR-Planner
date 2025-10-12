@@ -15,11 +15,15 @@ if (firebaseConfig.apiKey === "demo-api-key") {
 }
 
 // Debug logging for domain issues
-console.log("Firebase Config:", {
-  authDomain: firebaseConfig.authDomain,
-  projectId: firebaseConfig.projectId,
-  currentDomain: window.location.hostname
-});
+console.log("=== FIREBASE DEBUG INFO ===");
+console.log("Auth Domain:", firebaseConfig.authDomain);
+console.log("Project ID:", firebaseConfig.projectId);
+console.log("Current Domain:", window.location.hostname);
+console.log("Full URL:", window.location.href);
+console.log("Environment Variables:");
+console.log("- VITE_FIREBASE_AUTH_DOMAIN:", import.meta.env.VITE_FIREBASE_AUTH_DOMAIN);
+console.log("- VITE_FIREBASE_PROJECT_ID:", import.meta.env.VITE_FIREBASE_PROJECT_ID);
+console.log("==========================");
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);

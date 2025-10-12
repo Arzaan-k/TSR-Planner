@@ -12,9 +12,17 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  // Inject auth context headers for server-side permission checks
+  const userId = typeof window !== "undefined" ? localStorage.getItem("ttm_user_id") : null;
+  const role = typeof window !== "undefined" ? localStorage.getItem("ttm_user_role") : null;
+  const headers: Record<string, string> = {};
+  if (data) headers["Content-Type"] = "application/json";
+  if (userId) headers["X-User-Id"] = userId;
+  if (role) headers["X-User-Role"] = role;
+
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers,
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
@@ -29,8 +37,16 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
+    // Inject headers for GETs as well
+    const userId = typeof window !== "undefined" ? localStorage.getItem("ttm_user_id") : null;
+    const role = typeof window !== "undefined" ? localStorage.getItem("ttm_user_role") : null;
+    const headers: Record<string, string> = {};
+    if (userId) headers["X-User-Id"] = userId;
+    if (role) headers["X-User-Role"] = role;
+
     const res = await fetch(queryKey.join("/") as string, {
       credentials: "include",
+      headers,
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

@@ -41,17 +41,54 @@ export function DateModal({ isOpen, onClose, team, date }: DateModalProps) {
   const [venue, setVenue] = useState(team.defaultVenue || "");
   const [attendance, setAttendance] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
+  const [dateStr, setDateStr] = useState<string>(date);
+  const [existingMinutesId, setExistingMinutesId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isOpen && team.members) {
+    setDateStr(date);
+  }, [date]);
+
+  useEffect(() => {
+    const initDefaults = () => {
       // Initialize attendance - all members present by default
       const initialAttendance: Record<string, boolean> = {};
-      team.members.forEach(member => {
+      team.members?.forEach(member => {
         initialAttendance[member.id] = true;
       });
       setAttendance(initialAttendance);
+      setVenue(team.defaultVenue || "");
+      setExistingMinutesId(null);
+    };
+
+    if (isOpen && team.id && dateStr) {
+      // Try to load existing minutes for team+date
+      (async () => {
+        try {
+          const params = new URLSearchParams({ teamId: team.id, date: dateStr });
+          const resp = await fetch(`/api/minutes/by-team-and-date?${params}`, { credentials: "include" });
+          if (resp.status === 404) {
+            initDefaults();
+            return;
+          }
+          if (!resp.ok) {
+            initDefaults();
+            return;
+          }
+          const record = await resp.json();
+          setExistingMinutesId(record.id);
+          setVenue(record.venue || team.defaultVenue || "");
+          const att: Record<string, boolean> = {};
+          const presentIds: string[] = Array.isArray(record.attendance) ? record.attendance : [];
+          team.members?.forEach(m => { att[m.id] = presentIds.includes(m.id); });
+          setAttendance(att);
+        } catch (e) {
+          initDefaults();
+        }
+      })();
+    } else if (isOpen) {
+      initDefaults();
     }
-  }, [isOpen, team.members]);
+  }, [isOpen, team.id, team.members, team.defaultVenue, dateStr]);
 
   const handleSelectAll = (checked: boolean) => {
     const newAttendance: Record<string, boolean> = {};
@@ -77,13 +114,20 @@ export function DateModal({ isOpen, onClose, team, date }: DateModalProps) {
         .filter(([_, isPresent]) => isPresent)
         .map(([memberId, _]) => memberId);
 
-      // Update minutes for this team+date
-      await apiRequest("POST", "/api/minutes", {
-        teamId: team.id,
-        date,
-        venue: venue || null,
-        attendance: presentMemberIds,
-      });
+      // Upsert minutes for this team+date
+      if (existingMinutesId) {
+        await apiRequest("PATCH", `/api/minutes/${existingMinutesId}`, {
+          venue: venue || null,
+          attendance: presentMemberIds,
+        });
+      } else {
+        await apiRequest("POST", "/api/minutes", {
+          teamId: team.id,
+          date: dateStr,
+          venue: venue || null,
+          attendance: presentMemberIds,
+        });
+      }
 
       onClose();
     } catch (error) {
@@ -104,7 +148,7 @@ export function DateModal({ isOpen, onClose, team, date }: DateModalProps) {
         <DialogHeader>
           <DialogTitle className="flex items-center space-x-2">
             <Calendar className="h-5 w-5" />
-            <span>Meeting Details - {date}</span>
+            <span>Meeting Details</span>
           </DialogTitle>
           <DialogDescription>
             Set the venue and mark attendance for team members for this meeting.
@@ -112,6 +156,19 @@ export function DateModal({ isOpen, onClose, team, date }: DateModalProps) {
         </DialogHeader>
 
         <div className="space-y-6">
+          {/* Date */}
+          <div className="space-y-2">
+            <Label htmlFor="meeting-date" className="flex items-center space-x-2">
+              <Calendar className="h-4 w-4" />
+              <span>Date</span>
+            </Label>
+            <Input
+              id="meeting-date"
+              type="date"
+              value={dateStr}
+              onChange={(e) => setDateStr(e.target.value)}
+            />
+          </div>
           {/* Venue */}
           <div className="space-y-2">
             <Label htmlFor="venue" className="flex items-center space-x-2">
@@ -136,11 +193,8 @@ export function DateModal({ isOpen, onClose, team, date }: DateModalProps) {
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="select-all"
-                  checked={allSelected}
-                  ref={(el) => {
-                    if (el) el.indeterminate = someSelected;
-                  }}
-                  onCheckedChange={handleSelectAll}
+                  checked={allSelected ? true : someSelected ? "indeterminate" : false}
+                  onCheckedChange={(checked) => handleSelectAll(checked === true)}
                 />
                 <Label htmlFor="select-all" className="text-sm">
                   Select All

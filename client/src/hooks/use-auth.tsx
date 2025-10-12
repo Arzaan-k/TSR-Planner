@@ -30,6 +30,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (newRole) {
       setRole(newRole);
     }
+    // Persist for server-side permission checks
+    if (typeof window !== "undefined") {
+      if (newUser) {
+        localStorage.setItem("ttm_user_id", newUser.id);
+        localStorage.setItem("ttm_user_role", newRole || role || "Member");
+      } else {
+        localStorage.removeItem("ttm_user_id");
+        localStorage.removeItem("ttm_user_role");
+      }
+    }
   };
 
   useEffect(() => {
@@ -52,15 +62,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               const data = await response.json();
               setUser(data.user, data.role);
               break; // Success, exit retry loop
-            } catch (apiError) {
-              lastError = apiError;
+            } catch (apiError: unknown) {
+              lastError = apiError as Error;
               console.error(`API request failed (${4 - retries}/3):`, apiError);
               
               // Check if it's a retryable error (database connection issues)
-              if (apiError.message?.includes("500") || 
-                  apiError.message?.includes("503") || 
-                  apiError.message?.includes("Login failed") ||
-                  apiError.message?.includes("temporarily unavailable")) {
+              const msg = (apiError as Error)?.message || "";
+              if (msg.includes("500") || 
+                  msg.includes("503") || 
+                  msg.includes("Login failed") ||
+                  msg.includes("temporarily unavailable")) {
                 retries--;
                 if (retries > 0) {
                   // Wait before retry (exponential backoff)
@@ -80,22 +91,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(null);
           setRole("Member");
         }
-      } catch (error) {
+      } catch (error: unknown) {
         console.error("Auth state change error:", error);
         // Don't clear user state on database errors - keep Firebase auth state
         // Only clear if it's a real auth error
-        if (error.message?.includes("401") || error.message?.includes("403")) {
+        const msg = (error as Error)?.message || "";
+        if (msg.includes("401") || msg.includes("403")) {
           setUser(null);
           setRole("Member");
         } else {
           // For database errors, create a temporary user state
-          setUser({
-            id: firebaseUser.uid,
-            email: firebaseUser.email || "",
-            displayName: firebaseUser.displayName || undefined,
-            photoUrl: firebaseUser.photoURL || undefined,
-            isAdmin: false,
-          }, "Member");
+          if (firebaseUser) {
+            setUser({
+              id: firebaseUser.uid,
+              email: firebaseUser.email || "",
+              displayName: firebaseUser.displayName || undefined,
+              photoUrl: firebaseUser.photoURL || undefined,
+              isAdmin: false,
+            }, "Member");
+          } else {
+            setUser(null, "Member");
+          }
         }
       } finally {
         setLoading(false);

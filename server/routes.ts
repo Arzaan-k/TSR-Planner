@@ -6,6 +6,18 @@ import {
   insertTaskSchema, insertMinutesSchema, TaskStatus 
 } from "@shared/schema";
 
+// Helper to extract auth context from headers
+function getAuthFromHeaders(req: any) {
+  const userId = req.headers["x-user-id"] as string | undefined;
+  const role = (req.headers["x-user-role"] as string | undefined) || "Member";
+  return { userId, role };
+}
+
+async function isUserMemberOfTeam(userId: string, teamId: string): Promise<boolean> {
+  const memberships = await storage.getTeamMembersByUser(userId);
+  return memberships.some(m => m.team.id === teamId);
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth routes
   app.post("/api/auth/login", async (req, res) => {
@@ -232,11 +244,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/tasks", async (req, res) => {
     try {
+      const { userId, role } = getAuthFromHeaders(req);
       const taskData = insertTaskSchema.parse(req.body);
-      const task = await storage.createTask(taskData);
-      res.json(task);
+
+      // Validate assignee belongs to the same team if provided
+      if (taskData.responsibleMemberId) {
+        const member = await storage.getTeamMember(taskData.responsibleMemberId);
+        if (!member || member.teamId !== taskData.teamId) {
+          return res.status(400).json({ message: "Responsible member must belong to the same team" });
+        }
+      }
+
+      // Permission: Superadmin/Admin can create for any team
+      if (role === "Superadmin" || role === "Admin") {
+        const task = await storage.createTask(taskData);
+        return res.json(task);
+      }
+
+      // Coordinators can create for their own team
+      if (userId && role === "Coordinator") {
+        const isCoordinator = await storage.isUserCoordinatorOfTeam(userId, taskData.teamId);
+        if (isCoordinator) {
+          const task = await storage.createTask(taskData);
+          return res.json(task);
+        }
+      }
+
+      return res.status(403).json({ message: "Not authorized to create tasks for this team" });
     } catch (error) {
-      res.status(400).json({ message: "Invalid task data" });
+      return res.status(400).json({ message: "Invalid task data" });
     }
   });
 
@@ -244,11 +280,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { id } = req.params;
       const updates = req.body;
-      
-      const task = await storage.updateTask(id, updates);
-      res.json(task);
+      const { userId, role } = getAuthFromHeaders(req);
+
+      const existing = await storage.getTask(id);
+      if (!existing) return res.status(404).json({ message: "Task not found" });
+
+      // Superadmin/Admin can update all fields
+      if (role === "Superadmin" || role === "Admin") {
+        const task = await storage.updateTask(id, updates);
+        return res.json(task);
+      }
+
+      // Coordinator of the team can update all fields for their team
+      if (userId && role === "Coordinator") {
+        const isCoordinator = await storage.isUserCoordinatorOfTeam(userId, existing.teamId);
+        if (isCoordinator) {
+          const task = await storage.updateTask(id, updates);
+          return res.json(task);
+        }
+      }
+
+      // Team members: only notes (description) and status; must be a member of the task's team
+      if (userId && (role === "Member")) {
+        const memberOfTeam = await isUserMemberOfTeam(userId, existing.teamId);
+        if (!memberOfTeam) {
+          return res.status(403).json({ message: "Not authorized to update this task" });
+        }
+
+        const allowed: Record<string, any> = {};
+        if (typeof updates.notes !== "undefined") allowed.notes = updates.notes;
+        if (typeof updates.status !== "undefined") {
+          // Optional: restrict status transitions to valid values
+          const valid = ["Open", "In-Progress", "Blocked", "Done", "Canceled"];
+          if (!valid.includes(updates.status)) {
+            return res.status(400).json({ message: "Invalid status" });
+          }
+          allowed.status = updates.status;
+        }
+
+        if (Object.keys(allowed).length === 0) {
+          return res.status(403).json({ message: "Members can only update description and status" });
+        }
+
+        const task = await storage.updateTask(id, allowed);
+        return res.json(task);
+      }
+
+      return res.status(403).json({ message: "Not authorized to update this task" });
     } catch (error) {
-      res.status(500).json({ message: "Failed to update task" });
+      return res.status(500).json({ message: "Failed to update task" });
     }
   });
 
@@ -274,6 +354,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(minutes);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch minutes" });
+    }
+  });
+
+  // Get minutes by team and date
+  app.get("/api/minutes/by-team-and-date", async (req, res) => {
+    try {
+      const { teamId, date } = req.query as { teamId?: string; date?: string };
+      if (!teamId || !date) {
+        return res.status(400).json({ message: "teamId and date are required" });
+      }
+
+      const record = await storage.getMinutesByTeamAndDate(teamId, date);
+      if (!record) return res.status(404).json({ message: "Not found" });
+      return res.json(record);
+    } catch (error) {
+      return res.status(500).json({ message: "Failed to fetch minutes" });
     }
   });
 

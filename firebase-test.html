@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Firebase Domain Test</title>
+</head>
+<body>
+    <h1>Firebase Domain Test</h1>
+    <div id="output"></div>
+    
+    <script type="module">
+        // Test Firebase configuration
+        const projectId = 'tsr-planner'; // Replace with your actual project ID
+        const authDomain = `${projectId}.firebaseapp.com`;
+        
+        console.log('=== FIREBASE TEST ===');
+        console.log('Project ID:', projectId);
+        console.log('Auth Domain:', authDomain);
+        console.log('Current Domain:', window.location.hostname);
+        console.log('===================');
+        
+        document.getElementById('output').innerHTML = `
+            <p><strong>Project ID:</strong> ${projectId}</p>
+            <p><strong>Auth Domain:</strong> ${authDomain}</p>
+            <p><strong>Current Domain:</strong> ${window.location.hostname}</p>
+            <p><strong>Instructions:</strong></p>
+            <ol>
+                <li>Go to Firebase Console → Authentication → Settings</li>
+                <li>Add this domain to Authorized domains: <code>${window.location.hostname}</code></li>
+                <li>Set VITE_FIREBASE_AUTH_DOMAIN to: <code>${authDomain}</code></li>
+            </ol>
+        `;
+    </script>
+</body>
+</html>
+

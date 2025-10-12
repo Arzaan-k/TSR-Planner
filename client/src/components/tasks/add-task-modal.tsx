@@ -18,6 +18,7 @@ import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useTeam } from "@/hooks/use-team";
+import { useAuth } from "@/hooks/use-auth";
 
 const createTaskSchema = z.object({
   title: z.string().min(1, "Title is required").max(120, "Title too long"),
@@ -38,7 +39,9 @@ interface AddTaskModalProps {
 export function AddTaskModal({ open, onClose }: AddTaskModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { selectedTeam } = useTeam();
+  const { selectedTeam, teams } = useTeam();
+  const { role } = useAuth();
+  const [chosenTeamId, setChosenTeamId] = useState<string | null>(null);
 
   const {
     register,
@@ -52,32 +55,37 @@ export function AddTaskModal({ open, onClose }: AddTaskModalProps) {
     defaultValues: {
       priority: "Medium",
       status: "Open",
+      dueDate: new Date().toLocaleDateString('en-CA'),
     },
   });
 
+  const effectiveTeamId = (role === "Admin" || role === "Superadmin")
+    ? (chosenTeamId || selectedTeam?.id || null)
+    : (selectedTeam?.id || null);
+
   const { data: team } = useQuery({
-    queryKey: ["/api/teams", selectedTeam?.id],
+    queryKey: ["/api/teams", effectiveTeamId],
     queryFn: async () => {
-      if (!selectedTeam) return null;
+      if (!effectiveTeamId) return null;
       const response = await fetch("/api/teams", { credentials: "include" });
       if (response.ok) {
         const teams = await response.json();
-        return teams.find((t: any) => t.id === selectedTeam.id) || null;
+        return teams.find((t: any) => t.id === effectiveTeamId) || null;
       }
       return null;
     },
-    enabled: !!selectedTeam && open,
+    enabled: !!effectiveTeamId && open,
   });
 
   const createTaskMutation = useMutation({
     mutationFn: async (data: CreateTaskForm) => {
-      if (!selectedTeam?.id) {
+      if (!effectiveTeamId) {
         throw new Error("No team selected");
       }
       
       const taskData = {
         ...data,
-        teamId: selectedTeam.id,
+        teamId: effectiveTeamId,
         dueDate: data.dueDate ? new Date(data.dueDate).toISOString() : null,
         responsibleMemberId: data.responsibleMemberId === "unassigned" ? null : data.responsibleMemberId,
       };
@@ -97,7 +105,7 @@ export function AddTaskModal({ open, onClose }: AddTaskModalProps) {
   });
 
   const onSubmit = (data: CreateTaskForm) => {
-    if (!selectedTeam) {
+    if (!effectiveTeamId) {
       toast({ title: "Please select a team first", variant: "destructive" });
       return;
     }
@@ -115,6 +123,24 @@ export function AddTaskModal({ open, onClose }: AddTaskModalProps) {
         </DialogHeader>
         
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          {(role === "Admin" || role === "Superadmin") && (
+            <div>
+              <Label htmlFor="team">Team</Label>
+              <Select 
+                onValueChange={(value) => setChosenTeamId(value)}
+                defaultValue={selectedTeam?.id}
+              >
+                <SelectTrigger className="mt-1" data-testid="select-task-team">
+                  <SelectValue placeholder="Select a team" />
+                </SelectTrigger>
+                <SelectContent>
+                  {teams.map((t: any) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div>
             <Label htmlFor="title">Title *</Label>
             <Input

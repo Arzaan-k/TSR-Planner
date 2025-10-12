@@ -74,9 +74,9 @@ export function TaskCard({ task, canEdit }: TaskCardProps) {
     if (role === "Admin" || role === "Superadmin") return true;
     if (role === "Coordinator") return canEdit;
     if (role === "Member") {
-      // Members can only edit status and notes on their own tasks
-      return (field === "status" || field === "notes") && 
-             task.responsibleMember?.userId === user?.id;
+      // Members can only edit status and notes on any task within their team
+      const isSameTeam = !!task.team?.id; // task includes team in TaskWithDetails
+      return (field === "status" || field === "notes") && isSameTeam;
     }
     return false;
   };
