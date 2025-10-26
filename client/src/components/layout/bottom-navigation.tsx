@@ -30,7 +30,7 @@ export function BottomNavigation({ userRole }: BottomNavigationProps) {
   );
 
   return (
-    <nav className="bg-card border-t border-border px-2 py-2 flex items-center justify-around sticky bottom-0 z-40 w-full max-w-full overflow-x-hidden" data-testid="bottom-navigation">
+    <nav className="bg-card border-t border-border px-2 py-2 flex items-center justify-around sticky bottom-0 z-40" data-testid="bottom-navigation">
       {visibleTabs.map((tab) => {
         const Icon = tab.icon;
         const isActive = location === tab.path || (location === "/" && tab.path === "/tasks");

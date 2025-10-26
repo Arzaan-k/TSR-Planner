@@ -50,15 +50,26 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
       const response = await apiRequest("GET", "/api/teams");
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch teams: ${response.status} ${response.statusText}`);
+      }
+      
       const data = await response.json();
       setTeams(data);
       
       // If no team is selected and we have teams, select the first one
       if (!selectedTeam && data.length > 0) {
         setSelectedTeam(data[0]);
+      } else if (data.length === 0) {
+        // Clear selected team if user has no teams
+        setSelectedTeam(null);
       }
     } catch (error) {
       console.error("Failed to fetch teams:", error);
+      // Set teams to empty array and clear selected team on error
+      setTeams([]);
+      setSelectedTeam(null);
     } finally {
       setLoading(false);
     }

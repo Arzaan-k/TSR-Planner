@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { useTeam } from "@/hooks/use-team";
 import { useSearch } from "@/hooks/use-search";
 import { useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { Search, MapPin, Users } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Notes() {
@@ -121,45 +121,72 @@ export default function Notes() {
               filteredMinutes.map((minute: any) => (
                 <div key={minute.id} className="space-y-3" data-testid={`minute-${minute.id}`}>
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-foreground" data-testid="minute-date">
-                      {new Date(minute.date).toLocaleDateString('en-US', {
-                        weekday: 'long',
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                      })}
-                    </h3>
-                    <div className="text-sm text-muted-foreground" data-testid="minute-meta">
-                      <span>{minute.venue || "No venue"}</span>
-                      {Array.isArray(minute.attendance) && (
-                        <>
-                          {" • "}
-                          <span>{minute.attendance.length} present</span>
-                        </>
-                      )}
-                    </div>
+<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+  <h3 className="text-lg font-semibold text-foreground" data-testid="minute-date">
+    {new Date(minute.date).toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    })}
+  </h3>
+  <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground" data-testid="minute-meta">
+    <div className="flex items-center">
+      <MapPin className="w-4 h-4 mr-1" />
+      <span>{minute.venue || "No venue"}</span>
+    </div>
+    {Array.isArray(minute.attendance) && minute.attendance.length > 0 && (
+      <div className="flex items-center">
+        <Users className="w-4 h-4 mr-1" />
+        <span>
+          {minute.attendance.length} present: {minute.attendance.map(id => {
+            const member = selectedTeam?.members.find(m => m.id === id);
+            return member?.user?.displayName || 'Unknown';
+          }).join(', ')}
+        </span>
+      </div>
+    )}
+  </div>
+</div>
                   </div>
                   
                   {/* Snapshot Cards */}
                   {minute.snapshots && minute.snapshots.length > 0 ? (
                     <div className="space-y-2 ml-4" data-testid="snapshots-list">
-                      {minute.snapshots
-                        .filter((snapshot: any) => {
-                          if (!debouncedQuery) return true;
+                      {(() => {
+                        // Group snapshots by taskId and keep only the latest one for each task
+                        const groupedSnapshots: Record<string, any> = {};
+                        
+                        minute.snapshots.forEach((snapshot: any) => {
+                          const taskId = snapshot.taskId || snapshot.payload?.id;
+                          if (!taskId) return;
                           
-                          const searchTerm = debouncedQuery.toLowerCase();
-                          const task = snapshot.payload;
-                          const titleMatch = task.title?.toLowerCase().includes(searchTerm);
-                          const notesMatch = task.notes?.toLowerCase().includes(searchTerm);
-                          const changeTypeMatch = snapshot.changeType?.toLowerCase().includes(searchTerm);
-                          const memberMatch = task.responsibleMember?.user?.displayName?.toLowerCase().includes(searchTerm);
-                          
-                          return titleMatch || notesMatch || changeTypeMatch || memberMatch;
-                        })
-                        .map((snapshot: any) => (
-                          <SnapshotCard key={snapshot.id} snapshot={snapshot} />
-                        ))
-                      }
+                          if (!groupedSnapshots[taskId] || 
+                              new Date(snapshot.recordedAt) > new Date(groupedSnapshots[taskId].recordedAt)) {
+                            groupedSnapshots[taskId] = snapshot;
+                          }
+                        });
+                        
+                        // Convert to array and apply search filter
+                        const latestSnapshots = Object.values(groupedSnapshots);
+                        
+                        return latestSnapshots
+                          .filter((snapshot: any) => {
+                            if (!debouncedQuery) return true;
+                            
+                            const searchTerm = debouncedQuery.toLowerCase();
+                            const task = snapshot.payload;
+                            const titleMatch = task.title?.toLowerCase().includes(searchTerm);
+                            const notesMatch = task.notes?.toLowerCase().includes(searchTerm);
+                            const changeTypeMatch = snapshot.changeType?.toLowerCase().includes(searchTerm);
+                            const memberMatch = task.responsibleMember?.user?.displayName?.toLowerCase().includes(searchTerm);
+                            
+                            return titleMatch || notesMatch || changeTypeMatch || memberMatch;
+                          })
+                          .map((snapshot: any) => (
+                            <SnapshotCard key={snapshot.id} snapshot={snapshot} />
+                          ));
+                      })()}
                     </div>
                   ) : (
                     <div className="ml-4 p-3 bg-muted/50 rounded-lg text-center text-sm text-muted-foreground">

@@ -5,6 +5,7 @@ import { DateCard } from "@/components/teams/date-card";
 import { TaskCard } from "@/components/tasks/task-card";
 import { AddTaskModal } from "@/components/tasks/add-task-modal";
 import { FAB } from "@/components/ui/fab";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { useTeam } from "@/hooks/use-team";
@@ -12,12 +13,14 @@ import { useSearch } from "@/hooks/use-search";
 import { useQuery } from "@tanstack/react-query";
 import { Plus, Search } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useLocation } from "wouter";
 
 export default function Tasks() {
   const { user, role } = useAuth();
-  const { selectedTeam } = useTeam();
+  const { selectedTeam, teams } = useTeam();
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const { searchQuery, setSearchQuery, debouncedQuery } = useSearch();
+  const [, setLocation] = useLocation();
 
   const canCreateTasks = role === "Admin" || role === "Superadmin" || role === "Coordinator";
 
@@ -38,7 +41,7 @@ export default function Tasks() {
   });
 
   // Fetch tasks based on role and team
-  const { data: tasks = [], isLoading } = useQuery({
+  const { data: tasks = [], isLoading, error } = useQuery({
     queryKey: ["/api/tasks", selectedTeam?.id, userTeamMember?.id, role],
     queryFn: async () => {
       if (!selectedTeam) return [];
@@ -58,12 +61,13 @@ export default function Tasks() {
       const response = await fetch(`${url}?${params}`, { credentials: "include" });
       if (response.ok) {
         const allTasks = await response.json();
-        // Filter to show only open tasks (Open, In-Progress, Blocked)
+        // Filter to show active tasks (Open, In-Progress, Blocked, Done)
+        // Done tasks are considered completed but still visible
         return allTasks.filter((task: any) => 
-          ["Open", "In-Progress", "Blocked"].includes(task.status)
+          ["Open", "In-Progress", "Blocked", "Done"].includes(task.status)
         );
       }
-      return [];
+      throw new Error(`Failed to fetch tasks: ${response.status} ${response.statusText}`);
     },
     enabled: !!selectedTeam && (role !== "Member" || !!userTeamMember),
   });
@@ -81,9 +85,10 @@ export default function Tasks() {
       const response = await fetch(`/api/tasks/search?${params}`, { credentials: "include" });
       if (response.ok) {
         const allTasks = await response.json();
-        // Filter to show only open tasks (Open, In-Progress, Blocked)
+        // Filter to show active tasks (Open, In-Progress, Blocked, Done)
+        // Done tasks are considered completed but still visible
         return allTasks.filter((task: any) => 
-          ["Open", "In-Progress", "Blocked"].includes(task.status)
+          ["Open", "In-Progress", "Blocked", "Done"].includes(task.status)
         );
       }
       return [];
@@ -100,13 +105,25 @@ export default function Tasks() {
       <AuthGuard>
         <AppShell>
           <div className="flex items-center justify-center h-full p-4" data-testid="no-team-selected">
-            <div className="text-center">
+            <div className="text-center max-w-md">
               <h2 className="text-lg font-semibold text-foreground mb-2">
-                Select a Team
+                {teams.length > 0 ? "Select a Team" : "No Teams Available"}
               </h2>
-              <p className="text-muted-foreground">
-                Choose a team from the dropdown above to view and manage tasks.
+              <p className="text-muted-foreground mb-4">
+                {teams.length > 0 
+                  ? "Choose a team from the dropdown above to view and manage tasks."
+                  : "You are not currently a member of any teams. Contact your administrator to be added to a team or create a new team if you have the necessary permissions."
+                }
               </p>
+              {teams.length === 0 && (
+                <Button 
+                  onClick={() => setLocation("/teams")}
+                  variant="default"
+                  className="mt-2"
+                >
+                  Manage Teams
+                </Button>
+              )}
             </div>
           </div>
         </AppShell>
@@ -141,6 +158,18 @@ export default function Tasks() {
               Array.from({ length: 3 }).map((_, i) => (
                 <Skeleton key={i} className="h-32 w-full" />
               ))
+            ) : error ? (
+              <div className="text-center py-8" data-testid="tasks-error">
+                <h3 className="font-medium text-foreground mb-2">
+                  Error Loading Tasks
+                </h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  {error instanceof Error ? error.message : "Failed to load tasks"}
+                </p>
+                <Button onClick={() => window.location.reload()}>
+                  Reload Page
+                </Button>
+              </div>
             ) : displayTasks.length === 0 ? (
               <div className="text-center py-8" data-testid="no-tasks-message">
                 <h3 className="font-medium text-foreground mb-2">

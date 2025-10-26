@@ -24,7 +24,7 @@ const createTaskSchema = z.object({
   title: z.string().min(1, "Title is required").max(120, "Title too long"),
   notes: z.string().optional(),
   priority: z.enum(["Low", "Medium", "High"]).default("Medium"),
-  status: z.enum(["Open", "In-Progress", "Blocked"]).default("Open"),
+  status: z.enum(["Open", "In-Progress", "Blocked", "Done", "Canceled"]).default("Open"),
   responsibleMemberId: z.string().optional(),
   dueDate: z.string().optional(),
 });
@@ -99,8 +99,15 @@ export function AddTaskModal({ open, onClose }: AddTaskModalProps) {
       reset();
       onClose();
     },
-    onError: () => {
-      toast({ title: "Failed to create task", variant: "destructive" });
+    onError: (error: any) => {
+      console.error("Task creation error:", error);
+      const errorMessage = error?.response?.data?.message || "Failed to create task";
+      const errorDetails = error?.response?.data?.details || "";
+      toast({ 
+        title: errorMessage, 
+        description: errorDetails,
+        variant: "destructive" 
+      });
     },
   });
 
@@ -187,19 +194,21 @@ export function AddTaskModal({ open, onClose }: AddTaskModalProps) {
             
             <div>
               <Label htmlFor="status">Status</Label>
-              <Select 
-                defaultValue="Open" 
-                onValueChange={(value: "Open" | "In-Progress" | "Blocked") => setValue("status", value)}
-              >
-                <SelectTrigger className="mt-1" data-testid="select-task-status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Open">Open</SelectItem>
-                  <SelectItem value="In-Progress">In Progress</SelectItem>
-                  <SelectItem value="Blocked">Blocked</SelectItem>
-                </SelectContent>
-              </Select>
+<Select 
+  defaultValue="Open" 
+  onValueChange={(value: "Open" | "In-Progress" | "Blocked" | "Done" | "Canceled") => setValue("status", value)}
+>
+  <SelectTrigger className="mt-1" data-testid="select-task-status">
+    <SelectValue />
+  </SelectTrigger>
+  <SelectContent>
+    <SelectItem value="Open">Open</SelectItem>
+    <SelectItem value="In-Progress">In Progress</SelectItem>
+    <SelectItem value="Blocked">Blocked</SelectItem>
+    <SelectItem value="Done">Done</SelectItem>
+    <SelectItem value="Canceled">Canceled</SelectItem>
+  </SelectContent>
+</Select>
             </div>
           </div>
           

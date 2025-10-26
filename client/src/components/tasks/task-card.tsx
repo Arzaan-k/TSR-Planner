@@ -27,35 +27,15 @@ export function TaskCard({ task, canEdit }: TaskCardProps) {
       const response = await apiRequest("PATCH", `/api/tasks/${id}`, updates);
       return response.json();
     },
-    onMutate: async ({ id, updates }) => {
-      // Optimistically update any tasks lists in cache
-      const updater = (old: any[] | undefined) => {
-        if (!old) return old;
-        return old.map((t: any) => (t.id === id ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t));
-      };
-
-      queryClient.setQueriesData({ queryKey: ["/api/tasks"] }, updater);
-      queryClient.setQueriesData({ queryKey: ["/api/tasks", "search"] }, updater);
-    },
-    onSuccess: (data) => {
-      // Ensure caches have the server-normalized task
-      const replacer = (old: any[] | undefined) => {
-        if (!old) return old;
-        return old.map((t: any) => (t.id === data.id ? data : t));
-      };
-      queryClient.setQueriesData({ queryKey: ["/api/tasks"] }, replacer);
-      queryClient.setQueriesData({ queryKey: ["/api/tasks", "search"] }, replacer);
-
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
       showDebouncedToast("Task updated successfully");
       setIsEditing(null);
     },
-    onError: () => {
-      showImmediateToast("Failed to update task", "destructive");
-    },
-    onSettled: () => {
-      // Finally refetch to be consistent with backend
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tasks", "search"] });
+    onError: (error: any) => {
+      console.error("Task update error:", error);
+      const errorMessage = error?.response?.data?.message || "Failed to update task";
+      showImmediateToast(errorMessage, "destructive");
     },
   });
 
@@ -96,9 +76,9 @@ export function TaskCard({ task, canEdit }: TaskCardProps) {
     if (role === "Admin" || role === "Superadmin") return true;
     if (role === "Coordinator") return canEdit;
     if (role === "Member") {
-      // Members can only edit status and notes on any task within their team
+      // Members can only edit status, notes, and priority on any task within their team
       const isSameTeam = !!task.team?.id; // task includes team in TaskWithDetails
-      return (field === "status" || field === "notes") && isSameTeam;
+      return (field === "status" || field === "notes" || field === "priority") && isSameTeam;
     }
     return false;
   };
@@ -198,13 +178,32 @@ export function TaskCard({ task, canEdit }: TaskCardProps) {
               </div>
             )}
           </div>
-          <Badge variant="outline" className={cn(
-            task.priority === "High" && "text-destructive border-destructive",
-            task.priority === "Medium" && "text-accent border-accent",
-            task.priority === "Low" && "text-secondary border-secondary"
-          )} data-testid="task-priority">
-            {task.priority}
-          </Badge>
+{isEditing === "priority" && canEditField("priority") ? (
+  <Select defaultValue={task.priority} onValueChange={(value) => handleFieldUpdate("priority", value)}>
+    <SelectTrigger className="w-auto">
+      <SelectValue />
+    </SelectTrigger>
+    <SelectContent>
+      <SelectItem value="Low">Low</SelectItem>
+      <SelectItem value="Medium">Medium</SelectItem>
+      <SelectItem value="High">High</SelectItem>
+    </SelectContent>
+  </Select>
+) : (
+  <Badge 
+    variant="outline" 
+    className={cn(
+      task.priority === "High" && "text-destructive border-destructive cursor-pointer",
+      task.priority === "Medium" && "text-accent border-accent cursor-pointer",
+      task.priority === "Low" && "text-secondary border-secondary cursor-pointer",
+      "hover:bg-muted/50"
+    )} 
+    onClick={() => canEditField("priority") && setIsEditing("priority")}
+    data-testid="task-priority"
+  >
+    {task.priority}
+  </Badge>
+)}
         </div>
       </CardContent>
     </Card>

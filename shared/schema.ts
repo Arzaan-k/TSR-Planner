@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, timestamp, integer, jsonb, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -12,7 +12,10 @@ export const users = pgTable("users", {
   isAdmin: boolean("is_admin").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  emailIdx: index("users_email_idx").on(table.email),
+  displayNameIdx: index("users_display_name_idx").on(table.displayName),
+}));
 
 // Teams table
 export const teams = pgTable("teams", {
@@ -21,7 +24,9 @@ export const teams = pgTable("teams", {
   defaultVenue: text("default_venue"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  nameIdx: index("teams_name_idx").on(table.name),
+}));
 
 // Team members table
 export const teamMembers = pgTable("team_members", {
@@ -30,7 +35,10 @@ export const teamMembers = pgTable("team_members", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   isCoordinator: boolean("is_coordinator").default(false),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => ({
+  teamIdIdx: index("team_members_team_id_idx").on(table.teamId),
+  userIdIdx: index("team_members_user_id_idx").on(table.userId),
+}));
 
 // Tasks table
 export const tasks = pgTable("tasks", {
@@ -44,7 +52,13 @@ export const tasks = pgTable("tasks", {
   dueDate: timestamp("due_date"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  teamIdIdx: index("tasks_team_id_idx").on(table.teamId),
+  responsibleMemberIdIdx: index("tasks_responsible_member_id_idx").on(table.responsibleMemberId),
+  statusIdx: index("tasks_status_idx").on(table.status),
+  updatedAtIdx: index("tasks_updated_at_idx").on(table.updatedAt),
+  teamIdUpdatedAtIdx: index("tasks_team_id_updated_at_idx").on(table.teamId, sql`${table.updatedAt} desc`),
+}));
 
 // Minutes table (by team+date)
 export const minutes = pgTable("minutes", {
@@ -55,18 +69,28 @@ export const minutes = pgTable("minutes", {
   attendance: jsonb("attendance").default([]), // array of team member IDs
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  teamIdIdx: index("minutes_team_id_idx").on(table.teamId),
+  dateIdx: index("minutes_date_idx").on(table.date),
+  teamDateIdx: index("minutes_team_date_idx").on(table.teamId, table.date),
+}));
 
 // Snapshots table
 export const snapshots = pgTable("snapshots", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   minutesId: varchar("minutes_id").notNull().references(() => minutes.id, { onDelete: "cascade" }),
   taskId: varchar("task_id").notNull(), // reference for linking, but task may be deleted
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }), // user who made the change
   changeType: text("change_type", { enum: ["Added", "Edited", "Deleted"] }).notNull(),
   recordedAt: timestamp("recorded_at").defaultNow(),
   taskUpdatedAt: timestamp("task_updated_at").notNull(),
   payload: jsonb("payload").notNull(), // full task data at time of change
-});
+}, (table) => ({
+  minutesIdIdx: index("snapshots_minutes_id_idx").on(table.minutesId),
+  taskIdIdx: index("snapshots_task_id_idx").on(table.taskId),
+  userIdIdx: index("snapshots_user_id_idx").on(table.userId),
+  recordedAtIdx: index("snapshots_recorded_at_idx").on(table.recordedAt),
+}));
 
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
@@ -157,6 +181,6 @@ export interface TaskWithDetails extends Task {
 }
 
 export interface MinutesWithSnapshots extends Minutes {
-  snapshots: Snapshot[];
+  snapshots: (Snapshot & { user?: User })[];
   team: Team;
 }

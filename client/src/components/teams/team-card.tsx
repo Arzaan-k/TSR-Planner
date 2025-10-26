@@ -113,21 +113,21 @@ export function TeamCard({ team }: TeamCardProps) {
   return (
     <Card data-testid={`team-card-${team.id}`}>
       <CardContent className="p-4">
-        <div className="flex items-start justify-between mb-4">
-          <div>
-            <h3 className="font-semibold text-foreground text-lg" data-testid="team-name">
+        <div className="flex flex-col sm:flex-row sm:items-start gap-3 mb-4">
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-foreground text-lg truncate" data-testid="team-name">
               {team.name}
             </h3>
-            <p className="text-sm text-muted-foreground" data-testid="team-venue">
+            <p className="text-sm text-muted-foreground truncate" data-testid="team-venue">
               {team.defaultVenue || "No default venue"}
             </p>
           </div>
-          <div className="text-right text-sm text-muted-foreground">
-            <div data-testid="team-member-count">
-              <span>{team.members?.length || 0}</span> members
+          <div className="flex flex-row sm:flex-col items-center sm:items-end gap-3 sm:gap-1 text-sm text-muted-foreground flex-shrink-0">
+            <div className="flex items-center gap-1" data-testid="team-member-count">
+              <span className="font-medium">{team.members?.length || 0}</span> members
             </div>
-            <div data-testid="team-coordinator-count">
-              <span>{team.coordinators?.length || 0}</span> coordinators
+            <div className="flex items-center gap-1" data-testid="team-coordinator-count">
+              <span className="font-medium">{team.coordinators?.length || 0}</span> coordinators
             </div>
           </div>
         </div>
@@ -142,25 +142,25 @@ export function TeamCard({ team }: TeamCardProps) {
                 className="flex items-center justify-between p-2 bg-muted rounded"
                 data-testid={`team-member-${member.id}`}
               >
-                <div className="flex items-center space-x-3">
-                  <Avatar className="w-8 h-8">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <Avatar className="w-8 h-8 flex-shrink-0">
                     <AvatarImage src={member.user.photoUrl || undefined} />
                     <AvatarFallback className="text-sm font-medium">
                       {getInitials(member.user.displayName)}
                     </AvatarFallback>
                   </Avatar>
-                  <div>
-                    <p className="font-medium text-foreground text-sm">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-foreground text-sm truncate">
                       {member.user.displayName || "Unnamed User"}
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground truncate">
                       {member.user.email}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2 flex-shrink-0">
                   {member.isCoordinator && (
-                    <Badge className="text-xs bg-accent text-accent-foreground">
+                    <Badge className="text-xs bg-accent text-accent-foreground inline-flex items-center">
                       <Crown className="w-3 h-3 mr-1" />
                       Coordinator
                     </Badge>
@@ -169,7 +169,7 @@ export function TeamCard({ team }: TeamCardProps) {
                     variant="ghost"
                     size="sm"
                     onClick={() => toggleCoordinator(member)}
-                    className="h-8 w-8 p-0"
+                    className="h-8 w-8 p-0 flex-shrink-0"
                     data-testid={`button-toggle-coordinator-${member.id}`}
                   >
                     {member.isCoordinator ? <UserMinus className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
@@ -182,20 +182,23 @@ export function TeamCard({ team }: TeamCardProps) {
         
         {/* Add Member */}
         <div className="mt-4 pt-4 border-t border-border">
-          <form onSubmit={handleAddMember} className="flex space-x-2">
-            <Input
-              type="email"
-              placeholder="Enter email address..."
-              value={newMemberEmail}
-              onChange={(e) => setNewMemberEmail(e.target.value)}
-              className="flex-1"
-              data-testid="input-add-member-email"
-            />
+          <form onSubmit={handleAddMember} className="flex gap-2">
+            <div className="min-w-0 flex-1">
+              <Input
+                type="email"
+                placeholder="Enter email address..."
+                value={newMemberEmail}
+                onChange={(e) => setNewMemberEmail(e.target.value)}
+                className="w-full"
+                data-testid="input-add-member-email"
+              />
+            </div>
             <Button 
               type="submit" 
               size="sm"
               disabled={addMemberMutation.isPending || !newMemberEmail}
               data-testid="button-add-member"
+              className="flex-shrink-0"
             >
               <Mail className="w-4 h-4 mr-1" />
               Add

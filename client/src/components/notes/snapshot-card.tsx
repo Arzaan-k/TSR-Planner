@@ -74,25 +74,34 @@ export function SnapshotCard({ snapshot }: SnapshotCardProps) {
           </p>
         )}
 
-        {snapshot.changeType === "Edited" && (
-          <div className="text-sm space-y-1" data-testid="snapshot-changes">
-            <div className="text-accent">
-              Status updated to: {task.status}
+{snapshot.changeType === "Edited" && (
+            <div className="text-sm space-y-1" data-testid="snapshot-changes">
+              <div className="text-accent">
+                Status updated to: {task.status}
+              </div>
+              {task.notes && (
+                <div className="text-muted-foreground">
+                  Description: {task.notes}
+                </div>
+              )}
             </div>
+          )}
+          
+          <div className="flex items-center space-x-3 mt-2 text-xs text-muted-foreground">
+            <span data-testid="snapshot-assignee">
+              Assignee: {task.responsibleMember?.user?.displayName || "Unassigned"}
+            </span>
+            <span data-testid="snapshot-priority">
+              Priority: {task.priority}
+            </span>
+            <span data-testid="snapshot-status">
+              Status: {task.status}
+            </span>
           </div>
-        )}
-        
-        <div className="flex items-center space-x-3 mt-2 text-xs text-muted-foreground">
-          <span data-testid="snapshot-assignee">
-            Assignee: {task.responsibleMember?.user?.displayName || "Unassigned"}
-          </span>
-          <span data-testid="snapshot-priority">
-            Priority: {task.priority}
-          </span>
-          <span data-testid="snapshot-status">
-            Status: {task.status}
-          </span>
-        </div>
+          
+           <div className="text-xs text-muted-foreground mt-2" data-testid="snapshot-user">
+             Updated by: {snapshot.user?.displayName || "Unknown"} at {new Date(snapshot.recordedAt).toLocaleString()}
+           </div>
       </CardContent>
     </Card>
   );

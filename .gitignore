@@ -6,11 +6,11 @@ vite.config.ts.*
 *.tar.gz
 
 # Environment files
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# .env
+# .env.local
+# .env.development.local
+# .env.test.local
+# .env.production.local
 
 # Client-specific env files (use root .env instead)
 client/.env
@@ -101,3 +101,6 @@ ehthumbs.db
 
 # Render
 .render/
+
+#Ignore vscode AI rules
+.github\instructions\codacy.instructions.md

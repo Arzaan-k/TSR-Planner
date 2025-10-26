@@ -95,42 +95,44 @@ export function UserCard({ user }: UserCardProps) {
   return (
     <Card data-testid={`user-card-${user.id}`}>
       <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <Avatar className="w-10 h-10">
+        <div className="flex flex-col sm:flex-row sm:items-center">
+          <div className="flex items-start gap-3 min-w-0 flex-1">
+            <Avatar className="w-10 h-10 flex-shrink-0">
               <AvatarImage src={user.photoUrl || undefined} />
               <AvatarFallback className="font-medium">
                 {getInitials(user.displayName)}
               </AvatarFallback>
             </Avatar>
-            <div>
-              <h3 className="font-medium text-foreground" data-testid="user-name">
-                {user.displayName || "Unnamed User"}
-              </h3>
-              <p className="text-sm text-muted-foreground" data-testid="user-email">
-                {user.email}
-              </p>
-              <div className="flex space-x-1 mt-1">
-                <Badge 
-                  className={`text-xs ${getRoleColor(user.role)}`}
-                  data-testid="user-role"
-                >
-                  {getRoleIcon(user.role)}
-                  {user.role}
-                </Badge>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-col">
+                <h3 className="font-medium text-foreground truncate" data-testid="user-name">
+                  {user.displayName || "Unnamed User"}
+                </h3>
+                <p className="text-sm text-muted-foreground truncate" data-testid="user-email">
+                  {user.email}
+                </p>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  <Badge 
+                    className={`text-xs inline-flex items-center ${getRoleColor(user.role)}`}
+                    data-testid="user-role"
+                  >
+                    {getRoleIcon(user.role)}
+                    {user.role}
+                  </Badge>
+                </div>
               </div>
             </div>
           </div>
           
-          <div className="flex items-center space-x-3">
-            <div className="text-right text-sm">
-              <p className="text-muted-foreground">Coordinates</p>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-6 flex-shrink-0 mt-3 pt-3 border-t sm:border-t-0 sm:mt-0 sm:pt-0 border-border">
+            <div className="flex flex-row items-center gap-2 sm:flex-col sm:items-end sm:justify-center">
+              <span className="text-sm text-muted-foreground font-medium">Coordinates</span>
               {coordinatorCount > 0 ? (
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button 
                       variant="link" 
-                      className="h-auto p-0 text-primary hover:underline"
+                      className="h-auto p-0 text-primary hover:underline text-sm font-normal"
                       onClick={() => setShowCoordinatorTeams(true)}
                       data-testid="coordinator-teams-trigger"
                     >
@@ -149,15 +151,15 @@ export function UserCard({ user }: UserCardProps) {
                   </PopoverContent>
                 </Popover>
               ) : (
-                <span className="text-muted-foreground" data-testid="no-coordinator-teams">
+                <span className="text-primary text-sm" data-testid="no-coordinator-teams">
                   0 teams
                 </span>
               )}
             </div>
             
             {/* Admin Toggle */}
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-muted-foreground">Admin</span>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className="text-sm text-muted-foreground font-medium">Admin</span>
               <Switch
                 checked={user.isAdmin}
                 onCheckedChange={toggleAdmin}

@@ -3,7 +3,11 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
+console.log('🔧 Initializing Express application...');
+
 const app = express();
+
+console.log('🔧 Express application initialized');
 
 // Security headers
 app.use((req, res, next) => {
@@ -76,7 +80,9 @@ app.use((req, res, next) => {
 
     (async () => {
       try {
+        console.log('🔗 Registering API routes...');
         const server = await registerRoutes(app);
+        console.log('✅ API routes registered successfully');
 
         // Global error handler
         app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -120,6 +126,25 @@ app.use((req, res, next) => {
           log(`🚀 TSR Planner server running on port ${port}`);
           log(`📊 Environment: ${process.env.NODE_ENV}`);
           log(`🌐 Access: http://localhost:${port}`);
+          
+          // Test the server connection
+          server.getConnections((err, count) => {
+            if (err) {
+              log(`⚠️ Server connection check error: ${err.message}`);
+            } else {
+              log(`👥 Active connections: ${count}`);
+            }
+          });
+        });
+        
+        // Handle server listening errors
+        server.on('error', (err) => {
+          log(`❌ Server failed to start: ${err.message}`);
+        });
+        
+        server.on('listening', () => {
+          const addr = server.address();
+          log(`👂 Server is listening on ${JSON.stringify(addr)}`);
         });
 
         // Graceful shutdown handling

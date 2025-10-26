@@ -53,7 +53,7 @@ export function Header() {
         </h1>
       </div>
       
-      <div className="flex-1 mx-4 min-w-0">
+      <div className="flex-1 mx-4">
         <Select 
           value={selectedTeam?.id || ""} 
           onValueChange={(teamId) => {
@@ -62,8 +62,8 @@ export function Header() {
           }} 
           data-testid="team-selector"
         >
-          <SelectTrigger className="w-full max-w-full overflow-hidden">
-            <SelectValue placeholder="Select Team" className="truncate" />
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Select Team" />
           </SelectTrigger>
           <SelectContent>
             {teams.map((team) => (

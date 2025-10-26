@@ -39,9 +39,9 @@ export interface IStorage {
   getTaskWithDetails(id: string): Promise<TaskWithDetails | undefined>;
   getTasksByTeam(teamId: string, includeCompleted?: boolean): Promise<TaskWithDetails[]>;
   getTasksByResponsibleMember(memberId: string, includeCompleted?: boolean): Promise<TaskWithDetails[]>;
-  createTask(task: InsertTask): Promise<Task>;
-  updateTask(id: string, updates: Partial<Task>): Promise<Task>;
-  deleteTask(id: string): Promise<void>;
+  createTask(task: InsertTask, userId: string): Promise<Task>;
+  updateTask(id: string, updates: Partial<Task>, userId: string): Promise<Task>;
+  deleteTask(id: string, userId: string): Promise<void>;
 
   // Minutes operations
   getMinutes(id: string): Promise<Minutes | undefined>;
@@ -63,28 +63,68 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  private connectionRetries: number = 0;
+  private maxRetries: number = 3;
+  
   constructor() {
     // Database initialization will happen asynchronously when needed
     // The schema will be created via db:push command
   }
+  
+  private async withRetry<T>(operation: () => Promise<T>): Promise<T> {
+    let lastError: Error | null = null;
+    
+    for (let i = 0; i <= this.maxRetries; i++) {
+      try {
+        return await operation();
+      } catch (error: any) {
+        lastError = error;
+        
+        // If it's a fatal error, don't retry
+        if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+          console.error(`Fatal database connection error: ${error.message}`);
+          throw error;
+        }
+        
+        // If we've exhausted retries, throw the error
+        if (i === this.maxRetries) {
+          console.error(`Database operation failed after ${this.maxRetries} retries:`, error.message);
+          throw error;
+        }
+        
+        // Wait before retrying (exponential backoff)
+        const delay = Math.pow(2, i) * 1000;
+        console.warn(`Database operation failed, retrying in ${delay}ms... (${i + 1}/${this.maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    throw lastError!;
+  }
 
   // User operations
   async getUser(id: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user || undefined;
+    return this.withRetry(async () => {
+      const [user] = await db.select().from(users).where(eq(users.id, id));
+      return user || undefined;
+    });
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.email, email));
-    return user || undefined;
+    return this.withRetry(async () => {
+      const [user] = await db.select().from(users).where(eq(users.email, email));
+      return user || undefined;
+    });
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db
-      .insert(users)
-      .values(insertUser)
-      .returning();
-    return user;
+    return this.withRetry(async () => {
+      const [user] = await db
+        .insert(users)
+        .values(insertUser)
+        .returning();
+      return user;
+    });
   }
 
   async updateUser(id: string, updates: Partial<User>): Promise<User> {
@@ -127,7 +167,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllTeams(): Promise<Team[]> {
-    return await db.select().from(teams);
+    return this.withRetry(async () => {
+      return await db.select().from(teams);
+    });
   }
 
   async getAllTeamsWithMembers(): Promise<TeamWithMembers[]> {
@@ -236,15 +278,9 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getTasksByTeam(teamId: string, includeCompleted = false): Promise<TaskWithDetails[]> {
-    let query = db
-      .select()
-      .from(tasks)
-      .innerJoin(teams, eq(tasks.teamId, teams.id))
-      .leftJoin(teamMembers, eq(tasks.responsibleMemberId, teamMembers.id))
-      .leftJoin(users, eq(teamMembers.userId, users.id))
-      .where(eq(tasks.teamId, teamId));
-
+  async getTasksByTeam(teamId: string, includeCompleted = true): Promise<TaskWithDetails[]> {
+    let query;
+    
     if (!includeCompleted) {
       query = db
         .select()
@@ -260,6 +296,14 @@ export class DatabaseStorage implements IStorage {
             eq(tasks.status, "Blocked")
           )
         ));
+    } else {
+      query = db
+        .select()
+        .from(tasks)
+        .innerJoin(teams, eq(tasks.teamId, teams.id))
+        .leftJoin(teamMembers, eq(tasks.responsibleMemberId, teamMembers.id))
+        .leftJoin(users, eq(teamMembers.userId, users.id))
+        .where(eq(tasks.teamId, teamId));
     }
 
     const results = await query.orderBy(desc(tasks.updatedAt));
@@ -273,15 +317,9 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async getTasksByResponsibleMember(memberId: string, includeCompleted = false): Promise<TaskWithDetails[]> {
-    let query = db
-      .select()
-      .from(tasks)
-      .innerJoin(teams, eq(tasks.teamId, teams.id))
-      .innerJoin(teamMembers, eq(tasks.responsibleMemberId, teamMembers.id))
-      .innerJoin(users, eq(teamMembers.userId, users.id))
-      .where(eq(tasks.responsibleMemberId, memberId));
-
+  async getTasksByResponsibleMember(memberId: string, includeCompleted = true): Promise<TaskWithDetails[]> {
+    let query;
+    
     if (!includeCompleted) {
       query = db
         .select()
@@ -297,6 +335,14 @@ export class DatabaseStorage implements IStorage {
             eq(tasks.status, "Blocked")
           )
         ));
+    } else {
+      query = db
+        .select()
+        .from(tasks)
+        .innerJoin(teams, eq(tasks.teamId, teams.id))
+        .innerJoin(teamMembers, eq(tasks.responsibleMemberId, teamMembers.id))
+        .innerJoin(users, eq(teamMembers.userId, users.id))
+        .where(eq(tasks.responsibleMemberId, memberId));
     }
 
     const results = await query.orderBy(desc(tasks.updatedAt));
@@ -308,19 +354,19 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async createTask(insertTask: InsertTask): Promise<Task> {
+  async createTask(insertTask: InsertTask, userId: string): Promise<Task> {
     const [task] = await db
       .insert(tasks)
       .values(insertTask)
       .returning();
 
     // Create snapshot
-    await this.createTaskSnapshot(task, ChangeType.ADDED);
+    await this.createTaskSnapshot(task, ChangeType.ADDED, userId);
 
     return task;
   }
 
-  async updateTask(id: string, updates: Partial<Task>): Promise<Task> {
+  async updateTask(id: string, updates: Partial<Task>, userId: string): Promise<Task> {
     const [task] = await db
       .update(tasks)
       .set({ ...updates, updatedAt: new Date() })
@@ -329,23 +375,23 @@ export class DatabaseStorage implements IStorage {
     if (!task) throw new Error("Task not found");
 
     // Create snapshot
-    await this.createTaskSnapshot(task, ChangeType.EDITED);
+    await this.createTaskSnapshot(task, ChangeType.EDITED, userId);
 
     return task;
   }
 
-  async deleteTask(id: string): Promise<void> {
+  async deleteTask(id: string, userId: string): Promise<void> {
     const task = await this.getTask(id);
     if (task) {
-      await this.createTaskSnapshot(task, ChangeType.DELETED);
+      await this.createTaskSnapshot(task, ChangeType.DELETED, userId);
       await db.delete(tasks).where(eq(tasks.id, id));
     }
   }
 
-  private async createTaskSnapshot(task: Task, changeType: string): Promise<void> {
+  private async createTaskSnapshot(task: Task, changeType: string, userId: string): Promise<void> {
     const today = new Date().toISOString().split('T')[0];
     let minutesRecord = await this.getMinutesByTeamAndDate(task.teamId, today);
-    
+
     if (!minutesRecord) {
       const team = await this.getTeam(task.teamId);
       minutesRecord = await this.createMinutes({
@@ -359,6 +405,7 @@ export class DatabaseStorage implements IStorage {
     await this.createSnapshot({
       minutesId: minutesRecord.id,
       taskId: task.id,
+      userId,
       changeType: changeType as any,
       taskUpdatedAt: task.updatedAt || new Date(),
       payload: task,
@@ -387,18 +434,35 @@ export class DatabaseStorage implements IStorage {
       .where(eq(minutes.teamId, teamId))
       .orderBy(desc(minutes.date));
 
+    if (minutesResults.length === 0) return [];
+
+    // Collect all minutes IDs
+    const minutesIds = minutesResults.map(m => m.minutes.id);
+
+    // Fetch all snapshots for these minutes in one query
+    const allSnapshots = await db
+      .select()
+      .from(snapshots)
+      .leftJoin(users, eq(snapshots.userId, users.id))
+      .where(inArray(snapshots.minutesId, minutesIds))
+      .orderBy(desc(snapshots.recordedAt));
+
+    // Group snapshots by minutesId
+    const snapshotsByMinutesId: Record<string, (Snapshot & { user?: User })[]> = {};
+    for (const snapshot of allSnapshots) {
+      const snapshotWithUser = { ...snapshot.snapshots, user: snapshot.users || undefined };
+      if (!snapshotsByMinutesId[snapshot.snapshots.minutesId]) {
+        snapshotsByMinutesId[snapshot.snapshots.minutesId] = [];
+      }
+      snapshotsByMinutesId[snapshot.snapshots.minutesId].push(snapshotWithUser);
+    }
+
     const result: MinutesWithSnapshots[] = [];
     for (const minuteResult of minutesResults) {
-      const snapshotResults = await db
-        .select()
-        .from(snapshots)
-        .where(eq(snapshots.minutesId, minuteResult.minutes.id))
-        .orderBy(desc(snapshots.recordedAt));
-
       result.push({
         ...minuteResult.minutes,
         team: minuteResult.teams,
-        snapshots: snapshotResults,
+        snapshots: snapshotsByMinutesId[minuteResult.minutes.id] || [],
       });
     }
 

@@ -19,6 +19,13 @@ export default function Teams() {
   // All hooks must be called before any conditional returns
   const { data: teams = [], isLoading } = useQuery({
     queryKey: ["/api/teams"],
+    queryFn: async () => {
+      const response = await fetch("/api/teams", { credentials: "include" });
+      if (response.ok) {
+        return response.json();
+      }
+      return [];
+    },
   });
 
   // Search teams
