@@ -21,16 +21,23 @@ interface UserCardProps {
 export function UserCard({ user }: UserCardProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [showCoordinatorTeams, setShowCoordinatorTeams] = useState(false);
+  const [showCoordinatorTeams, setShowCoordinatorTeams] = useState(true);
 
   const { data: coordinatorTeams = [] } = useQuery({
     queryKey: ["/api/teams", "coordinator", user.id],
     queryFn: async () => {
-      const response = await fetch("/api/teams", { credentials: "include" });
+      const response = await fetch("/api/teams", {
+        headers: {
+          "x-user-id": user.id
+        },
+        credentials: "include"
+      });
       if (response.ok) {
         const allTeams = await response.json();
         return allTeams.filter((team: any) => 
-          team.coordinators?.some((coord: any) => coord.userId === user.id)
+          team.members?.some((member: any) => 
+            member.userId === user.id && member.isCoordinator
+          )
         );
       }
       return [];
